@@ -78,7 +78,7 @@ function Home() {
         {!showMonthCalendar && <>
           <Section className="w-1/5 flex flex-col justify-between">
             <Agenda />
-            <button className="bg-gray-400 text-white py-2" type="button" onClick={handleMonthToggleClick}>Month View</button>
+            <button className="border-2 text-lg py-2" type="button" onClick={handleMonthToggleClick}>Month View</button>
           </Section>
           <Section className="grow">
             <WeekPlanner />

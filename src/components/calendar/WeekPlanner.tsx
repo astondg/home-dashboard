@@ -245,8 +245,8 @@ function WeekPlanner() {
           <div className="grow relative px-1 py-2">
             <HandwritingDateCellWrapper value={eventGroup.date} onCreateEvent={handleCreateEvent} />
             {eventGroup.events && eventGroup.events.map(event => 
-              <div className={`${event.allDay ? "bg-blue-500" : "bg-gray-500"} text-white px-1 py-3 my-2`}>
-                {event.allDay ? "" : format(event.start!, "kk:mm") + " "}{event.title}
+              <div className={`${event.allDay ? "bg-blue-100/25" : "bg-slate-100/25"} px-2 py-3 my-2 grid grid-cols-2`}>
+                <span className="text-left">{event.allDay ? "" : format(event.start!, "kk:mm") + " "}</span><span className="text-left">{event.title}</span>
               </div>
             )}
           </div>

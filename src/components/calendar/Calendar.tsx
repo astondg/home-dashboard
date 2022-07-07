@@ -52,8 +52,6 @@ function HandwritingDateCellWrapper({ value }: { value?: Date }) {
 
   const handleRecognitionResults = useCallback((results?: string[], error?: Error) => {
     if (!value) return;
-
-    console.log("recognition results", results, error);
     if (!results || results.length < 1) return;
 
     const newEvent: Event = {

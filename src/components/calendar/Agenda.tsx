@@ -14,14 +14,11 @@ function Agenda() {
   const currentDate = new Date();
 
   useEffect(() => {
-    console.log("useEffect");
     const loadEvents = async() => {
-      console.log("loadEvents", app.user, app.selectedCalendarId, calEvents);
       if (app.user && app.selectedCalendarId && !calEvents) {
         try {
           const ianaTimeZones = findIana(app.user?.timeZone!);
           const events = await getUserDayCalendar(app.authProvider!, app.selectedCalendarId, ianaTimeZones[0].valueOf());
-          console.log('retrieved events', events);
           setCalEvents(events);
         } catch (err: any) {
           app.displayError!(err.message);
