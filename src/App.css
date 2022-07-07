@@ -2,8 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  overflow: hidden;
+  height: 100%;
+}
+
 body {
   height: 100vh;
+  overscroll: none;
 }
 
 #root {
@@ -69,4 +75,16 @@ button {
   height: 100%;
   width: 75%;
   background: turquoise;
+}
+
+.calendar-canvas {
+  overflow: hidden;
+  flex: 1 0 0%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  canvas {
+    height: 100%;
+    width: 100%;
+  }
 }

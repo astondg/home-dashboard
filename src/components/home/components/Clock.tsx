@@ -24,7 +24,7 @@ function Clock() {
         </div>
       </div>
       <h1 className="text-8xl grow">{`${value.getHours()}:${value.getMinutes()}:${value.getSeconds()}`}</h1>
-      <h2 className="text-6xl">18℃</h2>
+      <h2 className="text-6xl">18&deg;C</h2>
     </div>
   );
 }
