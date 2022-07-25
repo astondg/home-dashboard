@@ -36,14 +36,14 @@ export async function getUser(authProvider: AuthCodeMSALBrowserAuthenticationPro
 // <GetUserMonthCalendarSnippet>
 export async function getUserMonthCalendar(authProvider: AuthCodeMSALBrowserAuthenticationProvider,
                                           calendarId: string,
+                                          currentDay: Date,
                                           timeZone: string): Promise<Event[]> {
   ensureClient(authProvider);
 
   // Generate startDateTime and endDateTime query params
   // to display a 7-day window
-  const now = new Date();
-  const startDateTime = zonedTimeToUtc(startOfMonth(now), timeZone).toISOString();
-  const endDateTime = zonedTimeToUtc(endOfMonth(now), timeZone).toISOString();
+  const startDateTime = zonedTimeToUtc(startOfMonth(currentDay), timeZone).toISOString();
+  const endDateTime = zonedTimeToUtc(endOfMonth(currentDay), timeZone).toISOString();
 
   // GET /me/calendarview?startDateTime=''&endDateTime=''
   // &$select=subject,organizer,start,end
@@ -88,15 +88,15 @@ export async function getUserMonthCalendar(authProvider: AuthCodeMSALBrowserAuth
 export async function getUserWeekCalendar(
   authProvider: AuthCodeMSALBrowserAuthenticationProvider,
   calendarId: string,
+  currentDay: Date,
   timeZone: string
 ): Promise<Event[]> {
   ensureClient(authProvider);
 
   // Generate startDateTime and endDateTime query params
   // to display a 7-day window
-  const now = new Date();
-  const startDateTime = zonedTimeToUtc(startOfWeek(now), timeZone).toISOString();
-  const endDateTime = zonedTimeToUtc(endOfWeek(now), timeZone).toISOString();
+  const startDateTime = zonedTimeToUtc(startOfWeek(currentDay), timeZone).toISOString();
+  const endDateTime = zonedTimeToUtc(endOfWeek(currentDay), timeZone).toISOString();
 
   // GET /me/calendarview?startDateTime=''&endDateTime=''
   // &$select=subject,organizer,start,end
@@ -138,15 +138,15 @@ export async function getUserWeekCalendar(
 export async function getUserDayCalendar(
   authProvider: AuthCodeMSALBrowserAuthenticationProvider,
   calendarId: string,
+  currentDay: Date,
   timeZone: string
 ): Promise<Event[]> {
   ensureClient(authProvider);
 
   // Generate startDateTime and endDateTime query params
   // to display a 7-day window
-  const now = new Date();
-  const startDateTime = zonedTimeToUtc(startOfDay(now), timeZone).toISOString();
-  const endDateTime = zonedTimeToUtc(endOfDay(now), timeZone).toISOString();
+  const startDateTime = zonedTimeToUtc(startOfDay(currentDay), timeZone).toISOString();
+  const endDateTime = zonedTimeToUtc(endOfDay(currentDay), timeZone).toISOString();
 
   // GET /me/calendarview?startDateTime=''&endDateTime=''
   // &$select=subject,organizer,start,end
@@ -195,7 +195,7 @@ export async function getUserCalendars(
   // &$top=50
   var response: PageCollection = await graphClient!
   .api(`/me/calendars`)
-  .select('id,name')
+  .select('id,name,color,hexColor')
   .top(25)
   .get();
 
@@ -208,7 +208,7 @@ export async function getUserCalendars(
     // requests too
     var options: GraphRequestOptions = {};
 
-    var pageIterator = new PageIterator(graphClient!, response, (calendar) => {
+    var pageIterator = new PageIterator(graphClient!, response, (calendar: Calendar) => {
       calendars.push(calendar);
       return true;
     }, options);

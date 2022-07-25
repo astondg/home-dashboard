@@ -14,6 +14,7 @@ import { AuthCodeMSALBrowserAuthenticationProvider } from '@microsoft/microsoft-
 import { InteractionType, PublicClientApplication } from '@azure/msal-browser';
 import { useMsal } from '@azure/msal-react';
 import { getUser } from '../services/graphService';
+import { Calendar } from 'microsoft-graph';
 
 // <AppContextSnippet>
 export interface AppUser {
@@ -37,8 +38,9 @@ type AppContext = {
   displayError?: Function;
   clearError?: Function;
   authProvider?: AuthCodeMSALBrowserAuthenticationProvider;
-  selectedCalendarId?: string;
-  selectCalendar?(calendarId: string): void;
+  currentDay?: Date;
+  selectedCalendar?: { id: string, colour?: string };
+  selectCalendar?(calendar: Calendar): void;
 }
 
 const appContext = createContext<AppContext>({
@@ -49,7 +51,8 @@ const appContext = createContext<AppContext>({
   displayError: undefined,
   clearError: undefined,
   authProvider: undefined,
-  selectedCalendarId: undefined,
+  currentDay: undefined,
+  selectedCalendar: undefined,
   selectCalendar: undefined,
 });
 
@@ -74,7 +77,8 @@ export default function ProvideAppContext({ children }: ProvideAppContextProps) 
 function useProvideAppContext() {
   const [user, setUser] = useState<AppUser | undefined>(undefined);
   const [error, setError] = useState<AppError | undefined>(undefined);
-  const [selectedCalendarId, setSelectedCalendarId] = useState<string | undefined>(undefined);
+  const [currentDay, setCurrentDay] = useState<Date | undefined>(new Date(2022, 6, 5));
+  const [selectedCalendar, setSelectedCalendar] = useState<{ id: string, colour?: string } | undefined>(undefined);
 
   const msal = useMsal();
 
@@ -148,12 +152,15 @@ function useProvideAppContext() {
   const signOut = async () => {
     await msal.instance.logoutPopup();
     setUser(undefined);
-    setSelectedCalendarId(undefined);
+    setSelectedCalendar(undefined);
   };
   // </SignOutSnippet>
 
-  const selectCalendar = (calendarId: string) => {
-    setSelectedCalendarId(calendarId);
+  const selectCalendar = (calendar: Calendar) => {
+    if (!calendar.id) return;
+    console.log("calendar", calendar.color?.valueOf(), calendar.hexColor?.valueOf());
+    const colour = calendar.color?.valueOf() === "auto" ? calendar.hexColor?.valueOf() || undefined : calendar.hexColor?.valueOf();
+    setSelectedCalendar({ id: calendar.id, colour });
   };
 
   return {
@@ -164,7 +171,8 @@ function useProvideAppContext() {
     displayError,
     clearError,
     authProvider,
-    selectedCalendarId,
+    currentDay,
+    selectedCalendar,
     selectCalendar,
   };
 }

@@ -39,11 +39,16 @@ function HandwritingDateCellWrapper({ value, onCreateEvent }: { value: Date, onC
     if (!canvasRef.current) {
       setCanvasContext(undefined);
     } else {
-      canvasRef.current.width = canvasRef.current.clientWidth;
-      canvasRef.current.height = canvasRef.current.clientHeight;
       setCanvasContext(canvasRef.current.getContext("2d") || undefined);
     }
   }, [canvasRef.current]);
+
+  useEffect(() => {    
+    if (!canvasRef.current) return;
+    
+    canvasRef.current.width = canvasRef.current.clientWidth;
+    canvasRef.current.height = canvasRef.current.clientHeight;
+  }, [canvasRef.current, canvasRef.current?.clientWidth, canvasRef.current?.clientHeight]);
 
   const clearCanvas = useCallback(() => {
     if (!canvasRef.current || !canvasContext) return;
@@ -168,7 +173,7 @@ function HandwritingDateCellWrapper({ value, onCreateEvent }: { value: Date, onC
   return (
     <canvas
       ref={canvasRef}
-      className="h-full w-full absolute top-0 left-0 bottom-0 right-0 touch-none"
+      className="absolute top-0 bottom-0 left-0 right-0 w-full h-full touch-none"
       onPointerDown={handleCanvasMouseDown}
       onPointerMove={handleCanvasMouseMove}
       onPointerUp={handleCanvasMouseUp}
@@ -183,10 +188,10 @@ function WeekPlanner() {
 
   useEffect(() => {
     const loadEvents = async() => {
-      if (app.user && app.selectedCalendarId && !calEvents) {
+      if (app.user && app.selectedCalendar?.id && app.currentDay && !calEvents) {
         try {
           const ianaTimeZones = findIana(app.user?.timeZone!);
-          const events = await getUserWeekCalendar(app.authProvider!, app.selectedCalendarId, ianaTimeZones[0].valueOf());
+          const events = await getUserWeekCalendar(app.authProvider!, app.selectedCalendar.id, app.currentDay, ianaTimeZones[0].valueOf());
           setCalEvents(events);
         } catch (err: any) {
           app.displayError!(err.message);
@@ -195,11 +200,10 @@ function WeekPlanner() {
     };
 
     loadEvents();
-  }, [calEvents, app.authProvider, app.user, app.user?.timeZone, app.selectedCalendarId]);
+  }, [calEvents, app.authProvider, app.user, app.currentDay, app.user?.timeZone, app.selectedCalendar]);
 
   useEffect(() => {
-    const start = startOfWeek(new Date());
-    const dayNames = ["sunday", "monday", "tueseday", "wednesday", "thursday", "friday", "saturday"];
+    const start = startOfWeek(app.currentDay || new Date());
     const newWeekEvents: { name: string, date: Date, events: BigCalendarEvent[] }[] = [0,1,2,3,4,5,6].map(day => {
       const groupDate = addDays(start, day);
       return {
@@ -216,6 +220,7 @@ function WeekPlanner() {
         const existingGroup = newWeekEvents.find(item => item.date.getDate() === startOfDay(startOfEvent).getDate());
         if (!existingGroup) return;
         const newEvent = {
+          resource: event.id,
           title: event.subject,
           start: event.start?.dateTime ? parseISO(event.start.dateTime) : undefined,
           end: event.end?.dateTime ? parseISO(event.end.dateTime) : undefined,
@@ -227,25 +232,25 @@ function WeekPlanner() {
     }
 
     setGroupedEvents(newWeekEvents.sort((a, b) => a.date.getDate() - b.date.getDate()));
-  }, [calEvents]);
+  }, [app.currentDay, calEvents]);
 
   const handleCreateEvent = useCallback(async (event: Event) => {
-    if (!app.authProvider || !app.selectedCalendarId) return;
-    await createEvent(app.authProvider, app.selectedCalendarId, event);
-  }, [app.authProvider, app.selectedCalendarId]);
+    if (!app.authProvider || !app.selectedCalendar?.id) return;
+    await createEvent(app.authProvider, app.selectedCalendar.id, event);
+  }, [app.authProvider, app.selectedCalendar]);
 
   return (
-    <div className="grid grid-cols-3 gap-4 h-full">
+    <div className="grid h-full grid-cols-3 gap-4 auto-rows-fr">
       {groupedEvents && groupedEvents.map(eventGroup => {
-        return <div key={eventGroup.name} className="flex flex-col h-full">
+        return <div key={eventGroup.name} className="flex flex-col h-full overflow-hidden">
           <div className="border-b-2">
             <h3>{eventGroup.name}</h3>
             <span className="text-sm text-gray-500">{format(eventGroup.date, "do' of 'MMMM")}</span>
           </div>
-          <div className="grow relative px-1 py-2">
+          <div className="relative px-1 py-2 grow">
             <HandwritingDateCellWrapper value={eventGroup.date} onCreateEvent={handleCreateEvent} />
             {eventGroup.events && eventGroup.events.map(event => 
-              <div className={`${event.allDay ? "bg-blue-100/25" : "bg-slate-100/25"} px-2 py-3 my-2 grid grid-cols-2`}>
+              <div key={event.resource} className={`${event.allDay ? "bg-blue-100/25" : "bg-slate-100/25"} px-2 py-3 my-2 grid grid-cols-2`} style={{ backgroundColor: `${app.selectedCalendar?.colour}85` }}>
                 <span className="text-left">{event.allDay ? "" : format(event.start!, "kk:mm") + " "}</span><span className="text-left">{event.title}</span>
               </div>
             )}
