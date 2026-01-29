@@ -38,19 +38,50 @@ private val LightColorScheme = lightColorScheme(
     onSurface = Color.Black
 )
 
+/**
+ * High contrast color scheme optimized for e-ink displays.
+ * Uses pure black and white for maximum readability.
+ */
+private val EInkColorScheme = lightColorScheme(
+    primary = Color.Black,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFE0E0E0),
+    onPrimaryContainer = Color.Black,
+    secondary = Color(0xFF404040),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFF0F0F0),
+    onSecondaryContainer = Color.Black,
+    tertiary = Color(0xFF606060),
+    onTertiary = Color.White,
+    background = Color.White,
+    onBackground = Color.Black,
+    surface = Color.White,
+    onSurface = Color.Black,
+    surfaceVariant = Color(0xFFF5F5F5),
+    onSurfaceVariant = Color(0xFF404040),
+    outline = Color(0xFF808080),
+    outlineVariant = Color(0xFFD0D0D0)
+)
+
 @Composable
 fun HomeDashboardTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    // Set to true when running on e-ink device for optimal display
+    eInkMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = when {
+        eInkMode -> EInkColorScheme
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme || eInkMode
         }
     }
 
