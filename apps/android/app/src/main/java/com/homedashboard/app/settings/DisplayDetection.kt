@@ -129,6 +129,17 @@ object DisplayDetection {
     }
 
     /**
+     * Check if the device is a Boox e-ink device (supports Onyx Pen SDK)
+     */
+    fun isBooxDevice(): Boolean {
+        val manufacturer = Build.MANUFACTURER?.lowercase() ?: ""
+        val product = Build.PRODUCT?.lowercase() ?: ""
+        return manufacturer.contains("onyx") ||
+               manufacturer.contains("boox") ||
+               product.contains("boox")
+    }
+
+    /**
      * Check if the display appears to be an e-ink display
      */
     fun isEinkDisplay(context: Context): Boolean {
@@ -136,6 +147,35 @@ object DisplayDetection {
             DisplayType.MONOCHROME_EINK, DisplayType.COLOR_EINK -> true
             else -> false
         }
+    }
+
+    /**
+     * Check if the device has a frontlight/backlight that supports brightness dimming.
+     *
+     * E-ink devices without a frontlight (e.g. Kindle basic, some Kobo) cannot be dimmed.
+     * Most LCD/OLED devices always have a backlight. Boox Note Max does NOT have a frontlight.
+     */
+    fun hasFrontlight(context: Context): Boolean {
+        val displayType = detectDisplayType(context)
+
+        // LCD/OLED always have a backlight
+        if (displayType == DisplayType.COLOR_LCD || displayType == DisplayType.UNKNOWN) {
+            return true
+        }
+
+        // Known Boox models WITH a frontlight
+        val model = Build.MODEL ?: ""
+        val frontlightModels = setOf(
+            "Note Air", "Note Air2", "Note Air2 Plus", "Note Air3", "Note Air4", "Note Air5",
+            "Tab Ultra", "Tab Ultra C", "Tab Ultra C Pro",
+            "Max Lumi", "Max Lumi2",
+            "Tab X",
+            "Poke5", "Poke5 Color",
+            "Page", "Page Color",
+            "Leaf", "Leaf2"
+        )
+
+        return frontlightModels.any { model.contains(it, ignoreCase = true) }
     }
 
     /**

@@ -3,6 +3,7 @@ package com.homedashboard.app.data.local
 import androidx.room.*
 import com.homedashboard.app.data.model.Calendar
 import com.homedashboard.app.data.model.CalendarEvent
+import com.homedashboard.app.data.model.CalendarProvider
 import kotlinx.coroutines.flow.Flow
 import java.time.ZonedDateTime
 
@@ -79,6 +80,15 @@ interface CalendarDao {
     @Query("SELECT * FROM calendars WHERE id = :id")
     suspend fun getCalendarById(id: String): Calendar?
 
+    @Query("SELECT id FROM calendars WHERE isVisible = 1")
+    suspend fun getVisibleCalendarIds(): List<String>
+
+    @Query("SELECT * FROM calendars WHERE providerType = :providerType ORDER BY name ASC")
+    suspend fun getCalendarsByProvider(providerType: CalendarProvider): List<Calendar>
+
+    @Query("SELECT * FROM calendars WHERE isVisible = 1 AND isReadOnly = 0 ORDER BY name ASC")
+    suspend fun getWritableVisibleCalendars(): List<Calendar>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCalendar(calendar: Calendar)
 
@@ -93,4 +103,10 @@ interface CalendarDao {
 
     @Query("DELETE FROM calendars WHERE id = :id")
     suspend fun deleteCalendarById(id: String)
+
+    @Query("DELETE FROM calendar_events")
+    suspend fun clearAllEvents()
+
+    @Query("DELETE FROM calendars")
+    suspend fun clearAllCalendars()
 }

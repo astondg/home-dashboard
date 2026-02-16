@@ -5,7 +5,14 @@ import android.util.Log
 import com.google.mlkit.common.MlKitException
 import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.common.model.RemoteModelManager
-import com.google.mlkit.vision.digitalink.*
+import com.google.mlkit.vision.digitalink.DigitalInkRecognition
+import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModel
+import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModelIdentifier
+import com.google.mlkit.vision.digitalink.DigitalInkRecognizer
+import com.google.mlkit.vision.digitalink.DigitalInkRecognizerOptions
+import com.google.mlkit.vision.digitalink.Ink
+import com.google.mlkit.vision.digitalink.WritingArea
+import com.google.mlkit.vision.digitalink.RecognitionContext as MlKitRecognitionContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -98,8 +105,16 @@ class HandwritingRecognizer(private val context: Context) {
     /**
      * Recognize handwritten strokes and return the recognized text.
      * Returns a list of recognition candidates ordered by confidence.
+     *
+     * @param ink The ink strokes to recognize
+     * @param writingAreaWidth Width of the writing area in pixels (for recognition context)
+     * @param writingAreaHeight Height of the writing area in pixels (for recognition context)
      */
-    suspend fun recognize(ink: Ink): RecognitionResult {
+    suspend fun recognize(
+        ink: Ink,
+        writingAreaWidth: Float = 0f,
+        writingAreaHeight: Float = 0f
+    ): RecognitionResult {
         val currentRecognizer = recognizer
             ?: return RecognitionResult.Error("Recognizer not initialized")
 
@@ -108,9 +123,18 @@ class HandwritingRecognizer(private val context: Context) {
         }
 
         return suspendCancellableCoroutine { continuation ->
-            currentRecognizer.recognize(ink)
-                .addOnSuccessListener { result ->
-                    val candidates = result.candidates.map { it.text }
+            val task = if (writingAreaWidth > 0f && writingAreaHeight > 0f) {
+                val writingArea = WritingArea(writingAreaWidth, writingAreaHeight)
+                val recognitionContext = MlKitRecognitionContext.builder()
+                    .setPreContext("")
+                    .setWritingArea(writingArea)
+                    .build()
+                currentRecognizer.recognize(ink, recognitionContext)
+            } else {
+                currentRecognizer.recognize(ink)
+            }
+            task.addOnSuccessListener { mlResult ->
+                    val candidates = mlResult.candidates.map { it.text }
                     if (candidates.isNotEmpty()) {
                         continuation.resume(RecognitionResult.Success(candidates))
                     } else {
@@ -160,7 +184,7 @@ sealed class RecognitionResult {
  * Builder class for creating ML Kit Ink objects from touch events.
  */
 class InkBuilder {
-    private val strokeBuilder = Ink.Stroke.builder()
+    private var strokeBuilder = Ink.Stroke.builder()
     private val strokes = mutableListOf<Ink.Stroke>()
     private var currentStrokeHasPoints = false
 
@@ -178,6 +202,7 @@ class InkBuilder {
     fun finishStroke() {
         if (currentStrokeHasPoints) {
             strokes.add(strokeBuilder.build())
+            strokeBuilder = Ink.Stroke.builder()
             currentStrokeHasPoints = false
         }
     }
@@ -199,6 +224,7 @@ class InkBuilder {
      */
     fun clear() {
         strokes.clear()
+        strokeBuilder = Ink.Stroke.builder()
         currentStrokeHasPoints = false
     }
 

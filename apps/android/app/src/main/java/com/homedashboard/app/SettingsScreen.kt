@@ -1,18 +1,28 @@
 package com.homedashboard.app
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.OutlinedTextField
+import kotlinx.coroutines.launch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.homedashboard.app.auth.AuthState
 import com.homedashboard.app.auth.ICloudAuthState
+import com.homedashboard.app.data.model.Calendar
+import com.homedashboard.app.data.model.CalendarProvider
 import com.homedashboard.app.settings.CalendarLayoutType
 import com.homedashboard.app.settings.CalendarSettings
 import com.homedashboard.app.settings.DisplayMode
@@ -30,7 +40,20 @@ fun SettingsScreen(
     onLayoutChange: (CalendarLayoutType) -> Unit,
     onShowTasksChange: (Boolean) -> Unit,
     onShowQuickAddChange: (Boolean) -> Unit,
+    onWallCalendarModeChange: (Boolean) -> Unit,
     onEInkModeChange: (Boolean) -> Unit,
+    isEInkDetected: Boolean = false,
+    // Weather
+    onShowWeatherChange: (Boolean) -> Unit = {},
+    onWeatherTempUnitChange: (com.homedashboard.app.data.weather.TempUnit) -> Unit = {},
+    onWeatherLocationSet: (lat: Double, lon: Double, name: String) -> Unit = { _, _, _ -> },
+    // Always-on display
+    hasFrontlight: Boolean = true,
+    onAlwaysOnDisplayChange: (Boolean) -> Unit = {},
+    onNightDimEnabledChange: (Boolean) -> Unit = {},
+    onNightDimStartHourChange: (Int) -> Unit = {},
+    onNightDimEndHourChange: (Int) -> Unit = {},
+    onNightDimBrightnessChange: (Float) -> Unit = {},
     // Google Calendar sync
     authState: AuthState = AuthState.Unknown,
     syncState: SyncState = SyncState(),
@@ -42,6 +65,11 @@ fun SettingsScreen(
     onICloudConnect: (email: String, appPassword: String) -> Unit = { _, _ -> },
     onICloudDisconnect: () -> Unit = {},
     iCloudConnectError: String? = null,
+    // Calendar selection
+    calendars: List<Calendar> = emptyList(),
+    defaultCalendarId: String? = null,
+    onCalendarVisibilityChange: (calendarId: String, visible: Boolean) -> Unit = { _, _ -> },
+    onDefaultCalendarChange: (calendarId: String?) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // State for showing iCloud login dialog
@@ -154,6 +182,72 @@ fun SettingsScreen(
                 )
             }
 
+            // Calendar visibility toggles (show when we have calendars)
+            if (calendars.isNotEmpty()) {
+                item {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                }
+
+                item {
+                    SettingsSection(title = "Calendars")
+                }
+
+                // Google calendars
+                val googleCalendars = calendars.filter { it.providerType == CalendarProvider.GOOGLE }
+                if (googleCalendars.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Google",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                    }
+                    items(googleCalendars, key = { it.id }) { calendar ->
+                        CalendarToggleRow(
+                            calendar = calendar,
+                            onVisibilityChange = { visible ->
+                                onCalendarVisibilityChange(calendar.id, visible)
+                            }
+                        )
+                    }
+                }
+
+                // iCloud calendars
+                val iCloudCalendars = calendars.filter { it.providerType == CalendarProvider.ICLOUD }
+                if (iCloudCalendars.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "iCloud",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                    }
+                    items(iCloudCalendars, key = { it.id }) { calendar ->
+                        CalendarToggleRow(
+                            calendar = calendar,
+                            onVisibilityChange = { visible ->
+                                onCalendarVisibilityChange(calendar.id, visible)
+                            }
+                        )
+                    }
+                }
+
+                // Default calendar picker
+                val writableCalendars = calendars.filter { it.isVisible && !it.isReadOnly }
+                if (writableCalendars.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        DefaultCalendarPicker(
+                            calendars = writableCalendars,
+                            selectedCalendarId = defaultCalendarId,
+                            onCalendarSelected = onDefaultCalendarChange
+                        )
+                    }
+                }
+            }
+
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             }
@@ -183,11 +277,110 @@ fun SettingsScreen(
 
             item {
                 SettingsSwitch(
-                    title = "E-Ink Optimizations",
-                    description = "High contrast mode and reduced animations for e-ink displays",
-                    checked = settings.eInkRefreshMode,
+                    title = "Wall Calendar Mode",
+                    description = "Large text and touch targets for wall-mounted use",
+                    checked = settings.wallCalendarMode,
+                    onCheckedChange = onWallCalendarModeChange
+                )
+            }
+
+            item {
+                SettingsSwitch(
+                    title = "E-ink Display",
+                    description = "High contrast monochrome for e-ink screens" +
+                        if (isEInkDetected) " (detected)" else "",
+                    checked = settings.eInkRefreshMode || isEInkDetected,
                     onCheckedChange = onEInkModeChange
                 )
+            }
+
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            }
+
+            // Weather section
+            item {
+                SettingsSection(title = "Weather")
+            }
+
+            item {
+                SettingsSwitch(
+                    title = "Show Weather",
+                    description = "Display weather forecast in calendar headers",
+                    checked = settings.showWeather,
+                    onCheckedChange = onShowWeatherChange
+                )
+            }
+
+            if (settings.showWeather) {
+                item {
+                    WeatherLocationRow(
+                        locationName = settings.weatherLocationName,
+                        onLocationSet = onWeatherLocationSet
+                    )
+                }
+
+                item {
+                    WeatherTempUnitRow(
+                        currentUnit = settings.weatherTempUnit,
+                        onUnitChange = onWeatherTempUnitChange
+                    )
+                }
+            }
+
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            }
+
+            // Always-On Display section
+            item {
+                SettingsSection(title = "Always-On Display")
+            }
+
+            item {
+                SettingsSwitch(
+                    title = "Keep Screen On",
+                    description = "Prevent the screen from turning off (for wall-mounted use)",
+                    checked = settings.alwaysOnDisplay,
+                    onCheckedChange = onAlwaysOnDisplayChange
+                )
+            }
+
+            // Night dimming — only show if device has a frontlight/backlight
+            if (hasFrontlight) {
+                item {
+                    SettingsSwitch(
+                        title = "Night Dimming",
+                        description = "Reduce screen brightness on a schedule",
+                        checked = settings.nightDimEnabled,
+                        onCheckedChange = onNightDimEnabledChange
+                    )
+                }
+
+                if (settings.nightDimEnabled) {
+                    item {
+                        HourPickerRow(
+                            label = "Dim start",
+                            hour = settings.nightDimStartHour,
+                            onHourChange = onNightDimStartHourChange
+                        )
+                    }
+
+                    item {
+                        HourPickerRow(
+                            label = "Dim end",
+                            hour = settings.nightDimEndHour,
+                            onHourChange = onNightDimEndHourChange
+                        )
+                    }
+
+                    item {
+                        BrightnessSliderRow(
+                            brightness = settings.nightDimBrightness,
+                            onBrightnessChange = onNightDimBrightnessChange
+                        )
+                    }
+                }
             }
 
             item {
@@ -560,6 +753,85 @@ private fun GoogleAccountCard(
 }
 
 @Composable
+private fun HourPickerRow(
+    label: String,
+    hour: Int,
+    onHourChange: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            IconButton(
+                onClick = { onHourChange((hour - 1 + 24) % 24) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Remove, contentDescription = "Decrease hour")
+            }
+
+            Text(
+                text = String.format("%02d:00", hour),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium
+            )
+
+            IconButton(
+                onClick = { onHourChange((hour + 1) % 24) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Increase hour")
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrightnessSliderRow(
+    brightness: Float,
+    onBrightnessChange: (Float) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Night brightness",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                text = "${(brightness * 100).toInt()}%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Slider(
+            value = brightness,
+            onValueChange = onBrightnessChange,
+            valueRange = 0.01f..0.5f,
+            steps = 9
+        )
+    }
+}
+
+@Composable
 private fun ICloudAccountCard(
     authState: ICloudAuthState,
     syncState: SyncState,
@@ -759,6 +1031,347 @@ private fun ICloudAccountCard(
                             Text("Retry")
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarToggleRow(
+    calendar: Calendar,
+    onVisibilityChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onVisibilityChange(!calendar.isVisible) }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Color dot
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(Color(calendar.color.toLong() or 0xFF000000L))
+        )
+
+        Text(
+            text = calendar.name,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f)
+        )
+
+        if (calendar.isReadOnly) {
+            Text(
+                text = "Read-only",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Switch(
+            checked = calendar.isVisible,
+            onCheckedChange = onVisibilityChange
+        )
+    }
+}
+
+@Composable
+private fun DefaultCalendarPicker(
+    calendars: List<Calendar>,
+    selectedCalendarId: String?,
+    onCalendarSelected: (String?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val selectedCalendar = calendars.find { it.id == selectedCalendarId }
+    val displayName = selectedCalendar?.name ?: "Auto (first available)"
+
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Default calendar",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "New events will be added to: $displayName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (expanded) {
+                HorizontalDivider()
+
+                // Auto option
+                DefaultCalendarOption(
+                    name = "Auto (first available)",
+                    color = null,
+                    isSelected = selectedCalendarId == null,
+                    onClick = { onCalendarSelected(null) }
+                )
+
+                // Calendar options
+                for (calendar in calendars) {
+                    DefaultCalendarOption(
+                        name = calendar.name,
+                        color = Color(calendar.color.toLong() or 0xFF000000L),
+                        isSelected = calendar.id == selectedCalendarId,
+                        onClick = { onCalendarSelected(calendar.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultCalendarOption(
+    name: String,
+    color: Color?,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (color != null) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+        } else {
+            Spacer(modifier = Modifier.size(12.dp))
+        }
+
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+            modifier = Modifier.weight(1f)
+        )
+
+        RadioButton(
+            selected = isSelected,
+            onClick = onClick
+        )
+    }
+}
+
+@Composable
+private fun WeatherLocationRow(
+    locationName: String?,
+    onLocationSet: (lat: Double, lon: Double, name: String) -> Unit
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showDialog = true }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Location",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                text = locationName ?: "Not set - tap to configure",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            Icons.Default.Edit,
+            contentDescription = "Set location",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
+    if (showDialog) {
+        WeatherLocationDialog(
+            onDismiss = { showDialog = false },
+            onLocationSelected = { lat, lon, name ->
+                onLocationSet(lat, lon, name)
+                showDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun WeatherLocationDialog(
+    onDismiss: () -> Unit,
+    onLocationSelected: (lat: Double, lon: Double, name: String) -> Unit
+) {
+    var searchText by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<com.homedashboard.app.data.weather.GeocodingResult>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val weatherService = remember { com.homedashboard.app.data.weather.WeatherService() }
+
+    // Debounced autosearch: triggers 400ms after the user stops typing
+    LaunchedEffect(searchText) {
+        if (searchText.length >= 2) {
+            kotlinx.coroutines.delay(400L)
+            isSearching = true
+            val result = weatherService.geocodeCity(searchText)
+            result.onSuccess { results = it }
+            result.onFailure { results = emptyList() }
+            isSearching = false
+        } else {
+            results = emptyList()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Weather Location") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    label = { Text("City name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        if (isSearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else if (searchText.isNotEmpty()) {
+                            IconButton(onClick = { searchText = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    }
+                )
+
+                results.forEach { result ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onLocationSelected(result.latitude, result.longitude, result.displayName)
+                            },
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = result.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun WeatherTempUnitRow(
+    currentUnit: com.homedashboard.app.data.weather.TempUnit,
+    onUnitChange: (com.homedashboard.app.data.weather.TempUnit) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val displayName = when (currentUnit) {
+        com.homedashboard.app.data.weather.TempUnit.AUTO -> "Auto (from locale)"
+        com.homedashboard.app.data.weather.TempUnit.CELSIUS -> "Celsius (\u00B0C)"
+        com.homedashboard.app.data.weather.TempUnit.FAHRENHEIT -> "Fahrenheit (\u00B0F)"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = true }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Temperature unit",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                text = displayName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Box {
+            Icon(
+                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = "Change unit",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                com.homedashboard.app.data.weather.TempUnit.entries.forEach { unit ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(when (unit) {
+                                com.homedashboard.app.data.weather.TempUnit.AUTO -> "Auto (from locale)"
+                                com.homedashboard.app.data.weather.TempUnit.CELSIUS -> "Celsius (\u00B0C)"
+                                com.homedashboard.app.data.weather.TempUnit.FAHRENHEIT -> "Fahrenheit (\u00B0F)"
+                            })
+                        },
+                        onClick = {
+                            onUnitChange(unit)
+                            expanded = false
+                        },
+                        trailingIcon = {
+                            if (unit == currentUnit) {
+                                Icon(Icons.Default.Check, contentDescription = "Selected")
+                            }
+                        }
+                    )
                 }
             }
         }

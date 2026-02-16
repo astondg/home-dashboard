@@ -30,17 +30,17 @@ import com.homedashboard.app.data.remote.GoogleCalendarService
 import com.homedashboard.app.data.remote.GoogleEventMapper
 import com.homedashboard.app.data.remote.caldav.CalDavEventMapper
 import com.homedashboard.app.data.remote.caldav.CalDavService
-import com.homedashboard.app.handwriting.HandwritingInputDialog
 import com.homedashboard.app.handwriting.HandwritingRecognizer
 import com.homedashboard.app.handwriting.NaturalLanguageParser
-import com.homedashboard.app.settings.CalendarLayoutType
 import com.homedashboard.app.settings.CalendarSettings
+import com.homedashboard.app.settings.DisplayDetection
 import com.homedashboard.app.settings.SettingsRepository
 import com.homedashboard.app.sync.ICloudSyncProvider
 import com.homedashboard.app.sync.SyncManager
 import com.homedashboard.app.sync.SyncWorker
 import com.homedashboard.app.ui.theme.HomeDashboardTheme
 import com.homedashboard.app.viewmodel.CalendarViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -87,11 +87,34 @@ class MainActivity : ComponentActivity() {
         // Enable fullscreen immersive mode (hides status bar and nav bar)
         enableFullscreen()
 
-        // Keep screen on (important for wall-mounted display)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
         // Initialize repositories and database
         settingsRepository = SettingsRepository(applicationContext)
+
+        // Track latest settings for the night dimming timer
+        var latestSettings = CalendarSettings()
+
+        // Observe always-on display and night dimming settings
+        lifecycleScope.launch {
+            settingsRepository.settings.collect { settings ->
+                latestSettings = settings
+                // Always-on display toggle
+                if (settings.alwaysOnDisplay) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                // Apply brightness immediately when settings change
+                applyNightDimming(settings)
+            }
+        }
+
+        // Periodic night dimming check (time changes even when settings don't)
+        lifecycleScope.launch {
+            while (true) {
+                delay(60_000L)
+                applyNightDimming(latestSettings)
+            }
+        }
         val database = AppDatabase.getDatabase(applicationContext)
 
         // Initialize Google Calendar sync components
@@ -132,7 +155,8 @@ class MainActivity : ComponentActivity() {
                 taskDao = database.taskDao(),
                 authManager = authManager,
                 iCloudAuthManager = iCloudAuthManager,
-                syncManager = syncManager
+                syncManager = syncManager,
+                settingsRepository = settingsRepository
             )
         )[CalendarViewModel::class.java]
 
@@ -153,7 +177,8 @@ class MainActivity : ComponentActivity() {
         // Initialize handwriting recognizer
         handwritingRecognizer = HandwritingRecognizer(applicationContext)
         lifecycleScope.launch {
-            handwritingRecognizer.initialize()
+            val success = handwritingRecognizer.initialize()
+            Log.d(TAG, "HandwritingRecognizer initialized: success=$success, isReady=${handwritingRecognizer.isReady()}")
         }
 
         setContent {
@@ -167,7 +192,6 @@ class MainActivity : ComponentActivity() {
             val tasks by viewModel.tasks.collectAsState()
             val showAddEventForDate by viewModel.showAddEventDialog.collectAsState()
             val showAddTask by viewModel.showAddTaskDialog.collectAsState()
-            val showHandwritingForDate by viewModel.showHandwritingDialog.collectAsState()
             val showEventDetail by viewModel.showEventDetailDialog.collectAsState()
             val showTaskDetail by viewModel.showTaskDetailDialog.collectAsState()
 
@@ -179,12 +203,23 @@ class MainActivity : ComponentActivity() {
             val iCloudAuthState by viewModel.iCloudAuthState.collectAsState()
             val iCloudConnectError by viewModel.iCloudConnectError.collectAsState()
 
+            // Collect calendar selection state
+            val allCalendars by viewModel.calendars.collectAsState()
+            val calendarSettings by viewModel.calendarSettings.collectAsState()
+
+            // Collect weather data
+            val weatherByDate by viewModel.weatherByDate.collectAsState()
+
             // Track if settings screen should be shown
             var showSettings by remember { mutableStateOf(false) }
 
+            // Compute effective e-ink mode: user setting OR auto-detect
+            val effectiveEInk = settings.eInkRefreshMode ||
+                DisplayDetection.isEinkDisplay(applicationContext)
+
             HomeDashboardTheme(
-                // Use e-ink mode based on settings
-                eInkMode = settings.eInkRefreshMode
+                eInkMode = effectiveEInk,
+                wallCalendarMode = settings.wallCalendarMode
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -209,9 +244,57 @@ class MainActivity : ComponentActivity() {
                                     settingsRepository.updateShowQuickAdd(show)
                                 }
                             },
+                            onWallCalendarModeChange = { enabled ->
+                                lifecycleScope.launch {
+                                    settingsRepository.updateWallCalendarMode(enabled)
+                                }
+                            },
                             onEInkModeChange = { enabled ->
                                 lifecycleScope.launch {
                                     settingsRepository.updateEInkRefreshMode(enabled)
+                                }
+                            },
+                            isEInkDetected = DisplayDetection.isEinkDisplay(applicationContext),
+                            // Weather
+                            onShowWeatherChange = { enabled ->
+                                viewModel.updateShowWeather(enabled)
+                            },
+                            onWeatherTempUnitChange = { unit ->
+                                viewModel.updateWeatherTempUnit(unit)
+                            },
+                            onWeatherLocationSet = { lat, lon, name ->
+                                viewModel.updateWeatherLocation(
+                                    mode = com.homedashboard.app.data.weather.WeatherLocationMode.MANUAL,
+                                    lat = lat,
+                                    lon = lon,
+                                    name = name
+                                )
+                            },
+                            // Always-on display
+                            hasFrontlight = DisplayDetection.hasFrontlight(applicationContext),
+                            onAlwaysOnDisplayChange = { enabled ->
+                                lifecycleScope.launch {
+                                    settingsRepository.updateAlwaysOnDisplay(enabled)
+                                }
+                            },
+                            onNightDimEnabledChange = { enabled ->
+                                lifecycleScope.launch {
+                                    settingsRepository.updateNightDimEnabled(enabled)
+                                }
+                            },
+                            onNightDimStartHourChange = { hour ->
+                                lifecycleScope.launch {
+                                    settingsRepository.updateNightDimStartHour(hour)
+                                }
+                            },
+                            onNightDimEndHourChange = { hour ->
+                                lifecycleScope.launch {
+                                    settingsRepository.updateNightDimEndHour(hour)
+                                }
+                            },
+                            onNightDimBrightnessChange = { brightness ->
+                                lifecycleScope.launch {
+                                    settingsRepository.updateNightDimBrightness(brightness)
                                 }
                             },
                             // Google Calendar sync
@@ -238,13 +321,23 @@ class MainActivity : ComponentActivity() {
                             onICloudDisconnect = {
                                 viewModel.disconnectICloud()
                             },
-                            iCloudConnectError = iCloudConnectError
+                            iCloudConnectError = iCloudConnectError,
+                            // Calendar selection
+                            calendars = allCalendars,
+                            defaultCalendarId = calendarSettings.defaultCalendarId,
+                            onCalendarVisibilityChange = { calendarId, visible ->
+                                viewModel.setCalendarVisible(calendarId, visible)
+                            },
+                            onDefaultCalendarChange = { calendarId ->
+                                viewModel.setDefaultCalendarId(calendarId)
+                            }
                         )
                     } else {
                         CalendarScreen(
                             settings = settings,
                             eventsMap = eventsByDate,
                             tasks = tasks,
+                            weatherByDate = weatherByDate,
                             // Inline handwriting - write directly in day cells
                             recognizer = handwritingRecognizer,
                             parser = naturalLanguageParser,
@@ -273,12 +366,12 @@ class MainActivity : ComponentActivity() {
                             onAddEventClick = { date ->
                                 viewModel.openAddEventDialog(date)
                             },
-                            onWriteClick = { date ->
-                                // Fallback: open handwriting input dialog
-                                viewModel.openHandwritingDialog(date)
-                            },
+                            onWriteClick = { /* no-op: inline writing handles this */ },
                             onAddTaskClick = {
                                 viewModel.openAddTaskDialog()
+                            },
+                            onTaskTextRecognized = { text ->
+                                viewModel.addTask(title = text)
                             },
                             onHandwritingInput = { date, text ->
                                 // Quick add event from handwriting (legacy)
@@ -302,7 +395,10 @@ class MainActivity : ComponentActivity() {
                             onQuickAddInput = { text ->
                                 // Quick add task from input
                                 viewModel.addTask(title = text)
-                            }
+                            },
+                            onResetData = if (BuildConfig.DEBUG) {
+                                { viewModel.resetAllData() }
+                            } else null
                         )
                     }
 
@@ -335,26 +431,6 @@ class MainActivity : ComponentActivity() {
                                     dueDate = dueDate,
                                     priority = priority,
                                     description = description
-                                )
-                            }
-                        )
-                    }
-
-                    // Handwriting Input Dialog
-                    showHandwritingForDate?.let { date ->
-                        HandwritingInputDialog(
-                            date = date,
-                            recognizer = handwritingRecognizer,
-                            parser = naturalLanguageParser,
-                            onDismiss = { viewModel.closeHandwritingDialog() },
-                            onEventCreated = { parsedEvent ->
-                                viewModel.createEventFromParsedInput(
-                                    title = parsedEvent.title,
-                                    date = parsedEvent.date,
-                                    startTime = parsedEvent.startTime,
-                                    endTime = parsedEvent.endTime,
-                                    isAllDay = parsedEvent.isAllDay,
-                                    location = parsedEvent.location
                                 )
                             }
                         )
@@ -408,6 +484,36 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Apply night dimming by adjusting window brightness based on current time and settings.
+     */
+    private fun applyNightDimming(settings: CalendarSettings) {
+        if (!settings.nightDimEnabled) {
+            // Reset to system default brightness
+            val lp = window.attributes
+            lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            window.attributes = lp
+            return
+        }
+
+        val currentHour = java.time.LocalTime.now().hour
+        val isDimTime = if (settings.nightDimStartHour > settings.nightDimEndHour) {
+            // Wraps midnight, e.g. 22:00 - 07:00
+            currentHour >= settings.nightDimStartHour || currentHour < settings.nightDimEndHour
+        } else {
+            // Same day, e.g. 20:00 - 23:00
+            currentHour >= settings.nightDimStartHour && currentHour < settings.nightDimEndHour
+        }
+
+        val lp = window.attributes
+        lp.screenBrightness = if (isDimTime) {
+            settings.nightDimBrightness
+        } else {
+            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        }
+        window.attributes = lp
     }
 
     private fun enableFullscreen() {

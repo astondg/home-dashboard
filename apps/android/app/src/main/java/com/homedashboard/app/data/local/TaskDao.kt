@@ -52,4 +52,7 @@ interface TaskDao {
 
     @Query("DELETE FROM tasks WHERE isDeleted = 1")
     suspend fun purgeDeletedTasks()
+
+    @Query("DELETE FROM tasks")
+    suspend fun clearAllTasks()
 }

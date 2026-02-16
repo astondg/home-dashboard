@@ -45,6 +45,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -58,6 +59,10 @@ android {
             excludes += "/META-INF/NOTICE"
             excludes += "/META-INF/NOTICE.txt"
             excludes += "/META-INF/notice.txt"
+        }
+        // Resolve duplicate native lib from Boox SDK and mmkv
+        jniLibs {
+            pickFirsts += "**/libc++_shared.so"
         }
     }
 }
@@ -94,6 +99,17 @@ dependencies {
     // Google ML Kit - Digital Ink Recognition (handwriting)
     // Note: Can also use native InputMethodManager.startStylusHandwriting() on API 33+
     implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
+
+    // Motion prediction for stylus latency reduction
+    implementation("androidx.input:input-motionprediction:1.0.0-beta01")
+
+    // Boox Onyx Pen SDK - low-latency stylus input on e-ink devices
+    implementation("com.onyx.android.sdk:onyxsdk-pen:1.4.11") {
+        exclude(group = "com.android.support")
+    }
+    implementation("com.onyx.android.sdk:onyxsdk-device:1.2.30") {
+        exclude(group = "com.android.support")
+    }
 
     // Networking (for CalDAV and future API integrations)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

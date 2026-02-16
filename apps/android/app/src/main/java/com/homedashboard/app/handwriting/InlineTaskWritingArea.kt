@@ -3,29 +3,22 @@ package com.homedashboard.app.handwriting
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.homedashboard.app.ui.theme.LocalDimensions
+import com.homedashboard.app.ui.theme.LocalIsEInk
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -48,19 +41,13 @@ fun InlineTaskWritingArea(
     strokeColor: Color = MaterialTheme.colorScheme.onSurface,
     onTaskTextRecognized: (String) -> Unit,
     autoRecognizeDelayMs: Long = 1500L,
-    /**
-     * When true (default), only stylus input is captured for writing.
-     * Finger touches pass through to elements below (like task items).
-     * Set to false to accept both stylus and finger input.
-     */
+    zoneId: String = "task-list",
     stylusOnly: Boolean = true,
-    /**
-     * Called when a finger tap occurs and stylusOnly is true.
-     * Useful for handling taps on the empty area when no tasks exist.
-     */
     onFingerTap: (() -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
+    val dims = LocalDimensions.current
+    val isEInk = LocalIsEInk.current
 
     // Track all strokes for drawing
     val strokes = remember { mutableStateListOf<StrokeData>() }
@@ -79,6 +66,9 @@ fun InlineTaskWritingArea(
 
     val strokeWidthPx = with(LocalDensity.current) { (if (isCompact) 2.dp else 3.dp).toPx() }
 
+    // Track canvas size for recognition context
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+
     val hasStrokes = strokes.isNotEmpty() || currentStroke != null
 
     // Function to trigger recognition
@@ -87,7 +77,11 @@ fun InlineTaskWritingArea(
             isRecognizing = true
             scope.launch {
                 val ink = inkBuilder.build()
-                when (val result = recognizer.recognize(ink)) {
+                when (val result = recognizer.recognize(
+                    ink,
+                    writingAreaWidth = canvasSize.width.toFloat(),
+                    writingAreaHeight = canvasSize.height.toFloat()
+                )) {
                     is RecognitionResult.Success -> {
                         recognizedText = result.bestMatch
                         showConfirmation = true
@@ -121,158 +115,62 @@ fun InlineTaskWritingArea(
         }
     }
 
-    Box(modifier = modifier) {
-        // Drawing canvas with stylus input handling
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(stylusOnly) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull() ?: continue
-
-                            // Check if this is stylus input
-                            val isStylus = change.type == PointerType.Stylus ||
-                                change.type == PointerType.Eraser
-
-                            // If stylusOnly mode, only process stylus input
-                            if (stylusOnly && !isStylus) {
-                                // Don't consume - let it pass through to content below
-                                // But check for tap to trigger optional callback
-                                if (!change.pressed && change.previousPressed && onFingerTap != null) {
-                                    // This was a finger lift - check if it was a tap
-                                    val distance = (change.position - change.previousPosition).getDistance()
-                                    if (distance < 20f) {
-                                        onFingerTap()
-                                    }
-                                }
-                                continue
-                            }
-
-                            when {
-                                change.pressed && currentStroke == null -> {
-                                    // Start new stroke
-                                    autoRecognizeJob?.cancel()
-                                    showConfirmation = false
-
-                                    val startTime = System.currentTimeMillis()
-                                    val newStroke = StrokeData(
-                                        points = mutableListOf(change.position),
-                                        color = strokeColor,
-                                        width = strokeWidthPx
-                                    )
-                                    currentStroke = newStroke
-                                    inkBuilder.addPoint(
-                                        change.position.x,
-                                        change.position.y,
-                                        startTime
-                                    )
-                                    change.consume()
-                                }
-                                change.pressed && currentStroke != null -> {
-                                    // Continue stroke
-                                    val currentTime = System.currentTimeMillis()
-                                    currentStroke?.points?.add(change.position)
-                                    inkBuilder.addPoint(
-                                        change.position.x,
-                                        change.position.y,
-                                        currentTime
-                                    )
-                                    change.consume()
-                                }
-                                !change.pressed && currentStroke != null -> {
-                                    // End stroke
-                                    currentStroke?.let { stroke ->
-                                        strokes.add(stroke)
-                                    }
-                                    currentStroke = null
-                                    inkBuilder.finishStroke()
-
-                                    // Start auto-recognize timer
-                                    autoRecognizeJob?.cancel()
-                                    autoRecognizeJob = scope.launch {
-                                        delay(autoRecognizeDelayMs)
-                                        triggerRecognition()
-                                    }
-                                    change.consume()
-                                }
-                            }
-                        }
-                    }
-                }
-        ) {
-            // Draw completed strokes
-            strokes.forEach { stroke ->
-                if (stroke.points.size > 1) {
-                    val path = Path().apply {
-                        moveTo(stroke.points[0].x, stroke.points[0].y)
-                        for (i in 1 until stroke.points.size) {
-                            lineTo(stroke.points[i].x, stroke.points[i].y)
-                        }
-                    }
-                    drawPath(
-                        path = path,
-                        color = stroke.color,
-                        style = Stroke(
-                            width = stroke.width,
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
-                        )
-                    )
-                }
-            }
-
-            // Draw current stroke
-            currentStroke?.let { stroke ->
-                if (stroke.points.size > 1) {
-                    val path = Path().apply {
-                        moveTo(stroke.points[0].x, stroke.points[0].y)
-                        for (i in 1 until stroke.points.size) {
-                            lineTo(stroke.points[i].x, stroke.points[i].y)
-                        }
-                    }
-                    drawPath(
-                        path = path,
-                        color = stroke.color,
-                        style = Stroke(
-                            width = stroke.width,
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
-                        )
-                    )
-                }
-            }
-        }
-
-        // Empty state hint (only show when no strokes)
-        AnimatedVisibility(
-            visible = !hasStrokes && !showConfirmation,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    Icons.Default.Edit,
-                    contentDescription = "Write to add task",
-                    tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                    modifier = Modifier.size(if (isCompact) 16.dp else 24.dp)
+    // Drawing event listener that bridges AdaptiveWritingArea to InkBuilder
+    val drawingListener = remember(strokeColor, strokeWidthPx) {
+        object : DrawingEventListener {
+            override fun onStrokeStart(x: Float, y: Float, timestamp: Long) {
+                autoRecognizeJob?.cancel()
+                showConfirmation = false
+                val newStroke = StrokeData(
+                    points = mutableListOf(androidx.compose.ui.geometry.Offset(x, y)),
+                    color = strokeColor,
+                    width = strokeWidthPx
                 )
-                if (!isCompact) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Write here",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                        textAlign = TextAlign.Center
-                    )
+                currentStroke = newStroke
+                inkBuilder.addPoint(x, y, timestamp)
+            }
+
+            override fun onStrokeMove(x: Float, y: Float, timestamp: Long) {
+                currentStroke?.points?.add(androidx.compose.ui.geometry.Offset(x, y))
+                inkBuilder.addPoint(x, y, timestamp)
+            }
+
+            override fun onStrokeEnd() {
+                currentStroke?.let { stroke -> strokes.add(stroke) }
+                currentStroke = null
+                inkBuilder.finishStroke()
+                autoRecognizeJob?.cancel()
+                autoRecognizeJob = scope.launch {
+                    delay(autoRecognizeDelayMs)
+                    triggerRecognition()
                 }
             }
+
+            override fun onDrawingCleared() {
+                clearAll()
+            }
         }
+    }
+
+    Box(modifier = modifier) {
+        // Adaptive drawing surface - uses Boox SDK on Boox devices, Compose Canvas elsewhere
+        AdaptiveWritingArea(
+            strokes = strokes,
+            currentStroke = currentStroke,
+            modifier = Modifier.fillMaxSize(),
+            zoneId = zoneId,
+            config = DrawingConfig(
+                strokeColor = strokeColor,
+                strokeWidth = strokeWidthPx,
+                stylusOnly = stylusOnly
+            ),
+            listener = drawingListener,
+            onSizeChanged = { canvasSize = it },
+            onFingerTap = onFingerTap
+        )
+
+        // Hint removed — the user knows they can write with a stylus.
+        // The TaskList empty state hint handles the case when no tasks exist.
 
         // Recognition in progress indicator
         AnimatedVisibility(
@@ -298,11 +196,15 @@ fun InlineTaskWritingArea(
         ) {
             Surface(
                 shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                tonalElevation = 2.dp
+                color = if (isEInk) {
+                    MaterialTheme.colorScheme.surfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                tonalElevation = if (isEInk) 0.dp else 2.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(8.dp),
+                    modifier = Modifier.padding(dims.confirmPadding),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -310,7 +212,7 @@ fun InlineTaskWritingArea(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = recognizedText ?: "",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             maxLines = 2
                         )
                     }
@@ -319,7 +221,7 @@ fun InlineTaskWritingArea(
                     IconButton(
                         onClick = { clearAll() },
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(dims.confirmButtonSize)
                             .background(
                                 color = MaterialTheme.colorScheme.errorContainer,
                                 shape = CircleShape
@@ -329,14 +231,14 @@ fun InlineTaskWritingArea(
                             Icons.Default.Clear,
                             contentDescription = "Cancel",
                             tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(dims.buttonIconSize)
                         )
                     }
 
                     IconButton(
                         onClick = { confirmTask() },
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(dims.confirmButtonSize)
                             .background(
                                 color = MaterialTheme.colorScheme.primaryContainer,
                                 shape = CircleShape
@@ -346,7 +248,7 @@ fun InlineTaskWritingArea(
                             Icons.Default.Check,
                             contentDescription = "Add task",
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(dims.buttonIconSize)
                         )
                     }
                 }

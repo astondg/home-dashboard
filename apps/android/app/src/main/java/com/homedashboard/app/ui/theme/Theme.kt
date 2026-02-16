@@ -6,11 +6,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+
+val LocalIsEInk = staticCompositionLocalOf { false }
+val LocalIsWallCalendar = staticCompositionLocalOf { false }
 
 private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFF90CAF9),
@@ -58,23 +63,28 @@ private val EInkColorScheme = lightColorScheme(
     surface = Color.White,
     onSurface = Color.Black,
     surfaceVariant = Color(0xFFF5F5F5),
-    onSurfaceVariant = Color(0xFF404040),
-    outline = Color(0xFF808080),
-    outlineVariant = Color(0xFFD0D0D0)
+    onSurfaceVariant = Color(0xFF303030),
+    outline = Color(0xFF404040),
+    outlineVariant = Color(0xFF606060)
 )
 
 @Composable
 fun HomeDashboardTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Set to true when running on e-ink device for optimal display
     eInkMode: Boolean = false,
+    wallCalendarMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    // Colors: driven by eInkMode
     val colorScheme = when {
         eInkMode -> EInkColorScheme
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
+
+    // Typography + Dimensions: driven by wallCalendarMode
+    val typography = if (wallCalendarMode) WallCalendarTypography else StandardTypography
+    val dimensions = if (wallCalendarMode) WallCalendarDimensions else StandardDimensions
 
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -85,9 +95,15 @@ fun HomeDashboardTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(
+        LocalIsEInk provides eInkMode,
+        LocalIsWallCalendar provides wallCalendarMode,
+        LocalDimensions provides dimensions
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = typography,
+            content = content
+        )
+    }
 }

@@ -8,9 +8,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.homedashboard.app.calendar.CalendarEventUi
 import com.homedashboard.app.calendar.components.*
+import com.homedashboard.app.data.weather.DailyWeather
 import com.homedashboard.app.handwriting.HandwritingRecognizer
 import com.homedashboard.app.handwriting.NaturalLanguageParser
 import com.homedashboard.app.handwriting.ParsedEvent
+import com.homedashboard.app.ui.theme.LocalDimensions
 import java.time.LocalDate
 
 /**
@@ -31,6 +33,7 @@ fun Grid3x3Layout(
     eventsMap: Map<LocalDate, List<CalendarEventUi>>,
     tasks: List<TaskUi>,
     modifier: Modifier = Modifier,
+    weatherByDate: Map<LocalDate, DailyWeather> = emptyMap(),
     // Inline handwriting support
     recognizer: HandwritingRecognizer? = null,
     parser: NaturalLanguageParser? = null,
@@ -46,6 +49,7 @@ fun Grid3x3Layout(
     onTaskClick: (TaskUi) -> Unit = {},
     onQuickAddInput: (String) -> Unit = {}
 ) {
+    val dims = LocalDimensions.current
     val today = LocalDate.now()
 
     Column(
@@ -70,6 +74,7 @@ fun Grid3x3Layout(
                     showDayName = true,
                     headerLayout = DayHeaderLayout.HORIZONTAL,
                     showAddButton = true,
+                    weather = weatherByDate[date],
                     modifier = Modifier.weight(1f),
                     recognizer = recognizer,
                     parser = parser,
@@ -98,6 +103,7 @@ fun Grid3x3Layout(
                     showDayName = true,
                     headerLayout = DayHeaderLayout.HORIZONTAL,
                     showAddButton = true,
+                    weather = weatherByDate[date],
                     modifier = Modifier.weight(1f),
                     recognizer = recognizer,
                     parser = parser,
@@ -127,6 +133,7 @@ fun Grid3x3Layout(
                     showDayName = true,
                     headerLayout = DayHeaderLayout.HORIZONTAL,
                     showAddButton = true,
+                    weather = weatherByDate[days[6]],
                     modifier = Modifier.weight(1f),
                     recognizer = recognizer,
                     parser = parser,
@@ -144,7 +151,7 @@ fun Grid3x3Layout(
                     .weight(2f)  // 2 columns wide
                     .fillMaxHeight()
                     .border(
-                        width = 1.dp,
+                        width = dims.cellBorderWidth,
                         color = MaterialTheme.colorScheme.outlineVariant,
                         shape = MaterialTheme.shapes.small
                     ),

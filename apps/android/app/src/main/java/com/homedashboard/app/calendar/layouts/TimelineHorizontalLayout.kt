@@ -11,9 +11,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.homedashboard.app.calendar.CalendarEventUi
 import com.homedashboard.app.calendar.components.*
+import com.homedashboard.app.data.weather.DailyWeather
 import com.homedashboard.app.handwriting.HandwritingRecognizer
 import com.homedashboard.app.handwriting.NaturalLanguageParser
 import com.homedashboard.app.handwriting.ParsedEvent
+import com.homedashboard.app.ui.theme.LocalDimensions
+import com.homedashboard.app.ui.theme.LocalIsEInk
 import java.time.LocalDate
 
 /**
@@ -37,6 +40,7 @@ fun TimelineHorizontalLayout(
     eventsMap: Map<LocalDate, List<CalendarEventUi>>,
     tasks: List<TaskUi>,
     modifier: Modifier = Modifier,
+    weatherByDate: Map<LocalDate, DailyWeather> = emptyMap(),
     showTasks: Boolean = true,
     showQuickAdd: Boolean = true,
     // Inline handwriting support
@@ -54,6 +58,8 @@ fun TimelineHorizontalLayout(
     onTaskClick: (TaskUi) -> Unit = {},
     onQuickAddInput: (String) -> Unit = {}
 ) {
+    val dims = LocalDimensions.current
+    val isEInk = LocalIsEInk.current
     val today = LocalDate.now()
 
     Column(
@@ -78,7 +84,7 @@ fun TimelineHorizontalLayout(
                         .weight(1f)
                         .fillMaxHeight()
                         .border(
-                            width = if (isToday) 2.dp else 1.dp,
+                            width = if (isToday) dims.cellBorderWidthToday else dims.cellBorderWidth,
                             color = if (isToday) {
                                 MaterialTheme.colorScheme.primary
                             } else {
@@ -86,7 +92,7 @@ fun TimelineHorizontalLayout(
                             },
                             shape = MaterialTheme.shapes.small
                         ),
-                    color = if (isToday) {
+                    color = if (isToday && !isEInk) {
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
                     } else {
                         Color.Transparent
@@ -98,6 +104,7 @@ fun TimelineHorizontalLayout(
                         events = events,
                         isToday = isToday,
                         showAddButton = true,
+                        weather = weatherByDate[date],
                         recognizer = recognizer,
                         parser = parser,
                         onInlineEventCreated = onInlineEventCreated,
@@ -127,7 +134,7 @@ fun TimelineHorizontalLayout(
                             .weight(if (showQuickAdd) 0.6f else 1f)
                             .fillMaxHeight()
                             .border(
-                                width = 1.dp,
+                                width = dims.cellBorderWidth,
                                 color = MaterialTheme.colorScheme.outlineVariant,
                                 shape = MaterialTheme.shapes.small
                             ),
@@ -156,11 +163,11 @@ fun TimelineHorizontalLayout(
                             .weight(0.4f)
                             .fillMaxHeight()
                             .border(
-                                width = 1.dp,
+                                width = dims.cellBorderWidth,
                                 color = MaterialTheme.colorScheme.outlineVariant,
                                 shape = MaterialTheme.shapes.small
                             ),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                        color = if (isEInk) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
                         shape = MaterialTheme.shapes.small
                     ) {
                         QuickAddArea(

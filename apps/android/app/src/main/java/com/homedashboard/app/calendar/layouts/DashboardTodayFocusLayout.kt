@@ -19,6 +19,8 @@ import com.homedashboard.app.calendar.components.*
 import com.homedashboard.app.handwriting.HandwritingRecognizer
 import com.homedashboard.app.handwriting.NaturalLanguageParser
 import com.homedashboard.app.handwriting.ParsedEvent
+import com.homedashboard.app.ui.theme.LocalDimensions
+import com.homedashboard.app.ui.theme.LocalIsEInk
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -68,6 +70,8 @@ fun DashboardTodayFocusLayout(
     onTaskClick: (TaskUi) -> Unit = {},
     onQuickAddInput: (String) -> Unit = {}
 ) {
+    val dims = LocalDimensions.current
+    val isEInk = LocalIsEInk.current
     val today = LocalDate.now()
     val todayEvents = eventsMap[today] ?: emptyList()
     val tomorrow = today.plusDays(1)
@@ -96,11 +100,11 @@ fun DashboardTodayFocusLayout(
                     .weight(0.5f)
                     .fillMaxHeight()
                     .border(
-                        width = 2.dp,
+                        width = dims.cellBorderWidthToday,
                         color = MaterialTheme.colorScheme.primary,
                         shape = MaterialTheme.shapes.medium
                     ),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f),
+                color = if (isEInk) Color.Transparent else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f),
                 shape = MaterialTheme.shapes.medium
             ) {
                 TodayPanel(
@@ -123,7 +127,7 @@ fun DashboardTodayFocusLayout(
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(
-                            width = 1.dp,
+                            width = dims.cellBorderWidth,
                             color = MaterialTheme.colorScheme.outlineVariant,
                             shape = MaterialTheme.shapes.small
                         ),
@@ -144,7 +148,7 @@ fun DashboardTodayFocusLayout(
                         .fillMaxWidth()
                         .weight(0.4f)
                         .border(
-                            width = 1.dp,
+                            width = dims.cellBorderWidth,
                             color = MaterialTheme.colorScheme.outlineVariant,
                             shape = MaterialTheme.shapes.small
                         ),
@@ -165,7 +169,7 @@ fun DashboardTodayFocusLayout(
                         .fillMaxWidth()
                         .weight(0.6f)
                         .border(
-                            width = 1.dp,
+                            width = dims.cellBorderWidth,
                             color = MaterialTheme.colorScheme.outlineVariant,
                             shape = MaterialTheme.shapes.small
                         ),
@@ -261,7 +265,7 @@ private fun TodayPanel(
         // Header
         Text(
             text = "TODAY",
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold
         )
@@ -324,16 +328,16 @@ private fun TodayEventItem(
         // Time
         Text(
             text = event.startTime ?: "All day",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(60.dp)
+            modifier = Modifier.width(72.dp)
         )
 
         // Event details
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = event.title,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -364,7 +368,7 @@ private fun MiniWeekView(
     ) {
         Text(
             text = "THIS WEEK",
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold
         )
@@ -387,7 +391,7 @@ private fun MiniWeekView(
                 ) {
                     Text(
                         text = date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = if (isToday) {
                             MaterialTheme.colorScheme.primary
                         } else {
@@ -405,7 +409,7 @@ private fun MiniWeekView(
                     ) {
                         Text(
                             text = date.dayOfMonth.toString(),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                             color = if (isToday) {
                                 MaterialTheme.colorScheme.onPrimary
@@ -449,7 +453,7 @@ private fun TomorrowPreview(
     ) {
         Text(
             text = "TOMORROW",
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold
         )
@@ -464,7 +468,7 @@ private fun TomorrowPreview(
         if (events.isEmpty()) {
             Text(
                 text = "No events",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
@@ -485,7 +489,7 @@ private fun TomorrowPreview(
 
                     Text(
                         text = "${event.startTime ?: ""} ${event.title}".trim(),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyLarge,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -495,7 +499,7 @@ private fun TomorrowPreview(
             if (events.size > 3) {
                 Text(
                     text = "+${events.size - 3} more",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -516,7 +520,7 @@ private fun UpcomingEventsPanel(
     ) {
         Text(
             text = "UPCOMING",
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold
         )
@@ -530,7 +534,7 @@ private fun UpcomingEventsPanel(
             ) {
                 Text(
                     text = "No upcoming events",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -550,9 +554,9 @@ private fun UpcomingEventsPanel(
                         // Date badge
                         Text(
                             text = date.format(DateTimeFormatter.ofPattern("EEE d")),
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.width(48.dp)
+                            modifier = Modifier.width(52.dp)
                         )
 
                         // Color indicator
@@ -568,7 +572,7 @@ private fun UpcomingEventsPanel(
                         // Event title
                         Text(
                             text = event.title,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyLarge,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)

@@ -196,9 +196,41 @@ class SyncManager(
             val calendarList = calendars.items ?: emptyList()
             Log.d(TAG, "Found ${calendarList.size} Google calendars")
 
-            // Step 2: Download events from each calendar
-            for ((index, calendar) in calendarList.withIndex()) {
-                val progress = 0.2f + (0.4f * index / calendarList.size.coerceAtLeast(1))
+            // Upsert Calendar entities to Room
+            val accountEmail = tokenStorage.getAccountEmail() ?: "unknown"
+            val remoteCalendarIds = mutableSetOf<String>()
+            for (googleCal in calendarList) {
+                remoteCalendarIds.add(googleCal.id)
+                val existingCal = calendarDao.getCalendarById(googleCal.id)
+                if (existingCal != null) {
+                    // Update name/color/readOnly, preserve isVisible
+                    val localCal = eventMapper.toLocalCalendar(googleCal, accountEmail)
+                    calendarDao.updateCalendar(existingCal.copy(
+                        name = localCal.name,
+                        color = localCal.color,
+                        isReadOnly = localCal.isReadOnly
+                    ))
+                } else {
+                    // New calendar — insert with defaults from Google's selected field
+                    calendarDao.insertCalendar(eventMapper.toLocalCalendar(googleCal, accountEmail))
+                }
+            }
+
+            // Clean up calendars removed from remote
+            val existingGoogleCals = calendarDao.getCalendarsByProvider(CalendarProvider.GOOGLE)
+            for (localCal in existingGoogleCals) {
+                if (localCal.id !in remoteCalendarIds) {
+                    calendarDao.deleteCalendarById(localCal.id)
+                }
+            }
+
+            // Filter to only visible calendars
+            val visibleCalendarIds = calendarDao.getVisibleCalendarIds().toSet()
+
+            // Step 2: Download events from each calendar (only visible ones)
+            val visibleCalendarList = calendarList.filter { it.id in visibleCalendarIds }
+            for ((index, calendar) in visibleCalendarList.withIndex()) {
+                val progress = 0.2f + (0.4f * index / visibleCalendarList.size.coerceAtLeast(1))
                 onProgress(SyncPhase.DOWNLOADING_EVENTS, progress, "Syncing ${calendar.summary ?: "calendar"}...")
 
                 val downloadResult = downloadCalendarEvents(

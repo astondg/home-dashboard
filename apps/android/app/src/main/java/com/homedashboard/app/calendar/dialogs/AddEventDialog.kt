@@ -174,7 +174,7 @@ fun AddEventDialog(
                                 Column {
                                     Text(
                                         text = "Start",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
@@ -205,7 +205,7 @@ fun AddEventDialog(
                                 Column {
                                     Text(
                                         text = "End",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(

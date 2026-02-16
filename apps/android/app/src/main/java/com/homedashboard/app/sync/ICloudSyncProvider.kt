@@ -4,6 +4,7 @@ import android.util.Log
 import com.homedashboard.app.auth.ICloudAuthManager
 import com.homedashboard.app.auth.TokenStorage
 import com.homedashboard.app.data.local.CalendarDao
+import com.homedashboard.app.data.model.Calendar
 import com.homedashboard.app.data.model.CalendarEvent
 import com.homedashboard.app.data.model.CalendarProvider
 import com.homedashboard.app.data.remote.caldav.*
@@ -71,11 +72,49 @@ class ICloudSyncProvider(
 
             Log.d(TAG, "Found ${calendars.size} calendars")
 
-            // Step 2: Download events from each calendar
-            val progressPerCalendar = 0.5f / calendars.size.coerceAtLeast(1)
+            // Upsert Calendar entities to Room
+            val remoteCalendarIds = mutableSetOf<String>()
+            for (calDavCal in calendars) {
+                remoteCalendarIds.add(calDavCal.href)
+                val existingCal = calendarDao.getCalendarById(calDavCal.href)
+                if (existingCal != null) {
+                    // Update name/color/readOnly, preserve isVisible
+                    calendarDao.updateCalendar(existingCal.copy(
+                        name = calDavCal.displayName,
+                        color = parseCalDavColor(calDavCal.color),
+                        isReadOnly = calDavCal.readOnly
+                    ))
+                } else {
+                    // New calendar — insert as visible by default
+                    calendarDao.insertCalendar(Calendar(
+                        id = calDavCal.href,
+                        name = calDavCal.displayName,
+                        color = parseCalDavColor(calDavCal.color),
+                        providerType = CalendarProvider.ICLOUD,
+                        accountEmail = accountEmail,
+                        isVisible = true,
+                        isReadOnly = calDavCal.readOnly
+                    ))
+                }
+            }
+
+            // Clean up calendars removed from remote
+            val existingICloudCals = calendarDao.getCalendarsByProvider(CalendarProvider.ICLOUD)
+            for (localCal in existingICloudCals) {
+                if (localCal.id !in remoteCalendarIds) {
+                    calendarDao.deleteCalendarById(localCal.id)
+                }
+            }
+
+            // Filter to only visible calendars
+            val visibleCalendarIds = calendarDao.getVisibleCalendarIds().toSet()
+            val visibleCalendars = calendars.filter { it.href in visibleCalendarIds }
+
+            // Step 2: Download events from each calendar (only visible ones)
+            val progressPerCalendar = 0.5f / visibleCalendars.size.coerceAtLeast(1)
             var currentProgress = 0.1f
 
-            for (calendar in calendars) {
+            for (calendar in visibleCalendars) {
                 onProgress(currentProgress, "Syncing ${calendar.displayName}...")
 
                 try {
@@ -415,6 +454,25 @@ class ICloudSyncProvider(
 
     private fun extractUidFromFilename(filename: String): String {
         return filename.removeSuffix(".ics")
+    }
+
+    /**
+     * Parse a CalDAV hex color string (e.g., "#FF5733" or "#FF5733FF") to an Android color int.
+     */
+    private fun parseCalDavColor(colorString: String?): Int {
+        if (colorString == null) return 0xFF4285F4.toInt() // Default blue
+        return try {
+            android.graphics.Color.parseColor(
+                if (colorString.length == 9) {
+                    // #RRGGBBAA → #AARRGGBB
+                    "#${colorString.substring(7, 9)}${colorString.substring(1, 7)}"
+                } else {
+                    colorString
+                }
+            )
+        } catch (e: Exception) {
+            0xFF4285F4.toInt()
+        }
     }
 
     companion object {

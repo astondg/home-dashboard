@@ -1,10 +1,7 @@
 package com.homedashboard.app.handwriting
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,16 +14,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 
 /**
@@ -55,6 +46,42 @@ fun HandwritingCanvas(
     val inkBuilder = remember { InkBuilder() }
 
     val strokeWidthPx = with(LocalDensity.current) { strokeWidth.toPx() }
+
+    // Track canvas size for recognition context
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+
+    // Drawing event listener that bridges AdaptiveWritingArea to InkBuilder
+    val drawingListener = remember(strokeColor, strokeWidthPx) {
+        object : DrawingEventListener {
+            override fun onStrokeStart(x: Float, y: Float, timestamp: Long) {
+                val newStroke = StrokeData(
+                    points = mutableListOf(Offset(x, y)),
+                    color = strokeColor,
+                    width = strokeWidthPx
+                )
+                currentStroke = newStroke
+                inkBuilder.addPoint(x, y, timestamp)
+            }
+
+            override fun onStrokeMove(x: Float, y: Float, timestamp: Long) {
+                currentStroke?.points?.add(Offset(x, y))
+                inkBuilder.addPoint(x, y, timestamp)
+            }
+
+            override fun onStrokeEnd() {
+                currentStroke?.let { stroke -> strokes.add(stroke) }
+                currentStroke = null
+                inkBuilder.finishStroke()
+            }
+
+            override fun onDrawingCleared() {
+                strokes.clear()
+                currentStroke = null
+                inkBuilder.clear()
+                recognitionError = null
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -101,99 +128,20 @@ fun HandwritingCanvas(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp)
         ) {
-            Canvas(
+            AdaptiveWritingArea(
+                strokes = strokes,
+                currentStroke = currentStroke,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(backgroundColor)
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            // Wait for first touch/stylus down
-                            val down = awaitFirstDown()
-                            val startTime = System.currentTimeMillis()
-
-                            // Start a new stroke
-                            val newStroke = StrokeData(
-                                points = mutableListOf(down.position),
-                                color = strokeColor,
-                                width = strokeWidthPx
-                            )
-                            currentStroke = newStroke
-                            inkBuilder.addPoint(
-                                down.position.x,
-                                down.position.y,
-                                startTime
-                            )
-
-                            // Track movement
-                            do {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull() ?: break
-
-                                if (change.pressed) {
-                                    val currentTime = System.currentTimeMillis()
-                                    currentStroke?.let { stroke ->
-                                        stroke.points.add(change.position)
-                                    }
-                                    inkBuilder.addPoint(
-                                        change.position.x,
-                                        change.position.y,
-                                        currentTime
-                                    )
-                                    change.consume()
-                                }
-                            } while (event.changes.any { it.pressed })
-
-                            // Stroke finished - add to list
-                            currentStroke?.let { stroke ->
-                                strokes.add(stroke)
-                            }
-                            currentStroke = null
-                            inkBuilder.finishStroke()
-                        }
-                    }
-            ) {
-                // Draw completed strokes
-                strokes.forEach { stroke ->
-                    if (stroke.points.size > 1) {
-                        val path = Path().apply {
-                            moveTo(stroke.points[0].x, stroke.points[0].y)
-                            for (i in 1 until stroke.points.size) {
-                                lineTo(stroke.points[i].x, stroke.points[i].y)
-                            }
-                        }
-                        drawPath(
-                            path = path,
-                            color = stroke.color,
-                            style = Stroke(
-                                width = stroke.width,
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round
-                            )
-                        )
-                    }
-                }
-
-                // Draw current stroke
-                currentStroke?.let { stroke ->
-                    if (stroke.points.size > 1) {
-                        val path = Path().apply {
-                            moveTo(stroke.points[0].x, stroke.points[0].y)
-                            for (i in 1 until stroke.points.size) {
-                                lineTo(stroke.points[i].x, stroke.points[i].y)
-                            }
-                        }
-                        drawPath(
-                            path = path,
-                            color = stroke.color,
-                            style = Stroke(
-                                width = stroke.width,
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round
-                            )
-                        )
-                    }
-                }
-            }
+                    .background(backgroundColor),
+                config = DrawingConfig(
+                    strokeColor = strokeColor,
+                    strokeWidth = strokeWidthPx,
+                    stylusOnly = false  // Dialog canvas accepts both stylus and finger
+                ),
+                listener = drawingListener,
+                onSizeChanged = { canvasSize = it }
+            )
 
             // Empty state hint
             if (strokes.isEmpty() && currentStroke == null) {
@@ -254,7 +202,6 @@ fun HandwritingCanvas(
                     if (inkBuilder.hasStrokes()) {
                         isRecognizing = true
                         recognitionError = null
-                        // Recognition is handled by the parent via LaunchedEffect
                     }
                 },
                 enabled = strokes.isNotEmpty() && !isRecognizing
@@ -274,7 +221,11 @@ fun HandwritingCanvas(
     LaunchedEffect(isRecognizing) {
         if (isRecognizing && inkBuilder.hasStrokes()) {
             val ink = inkBuilder.build()
-            when (val result = recognizer.recognize(ink)) {
+            when (val result = recognizer.recognize(
+                ink,
+                writingAreaWidth = canvasSize.width.toFloat(),
+                writingAreaHeight = canvasSize.height.toFloat()
+            )) {
                 is RecognitionResult.Success -> {
                     onRecognitionResult(result.bestMatch)
                 }
@@ -291,7 +242,7 @@ fun HandwritingCanvas(
  * Data class to store stroke information for drawing.
  * Internal visibility so it can be shared within the handwriting package.
  */
-internal data class StrokeData(
+data class StrokeData(
     val points: MutableList<Offset>,
     val color: Color,
     val width: Float

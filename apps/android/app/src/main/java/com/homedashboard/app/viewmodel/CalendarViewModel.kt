@@ -14,9 +14,15 @@ import com.homedashboard.app.calendar.dialogs.EventDetails
 import com.homedashboard.app.calendar.dialogs.TaskDetails
 import com.homedashboard.app.data.local.CalendarDao
 import com.homedashboard.app.data.local.TaskDao
+import com.homedashboard.app.data.model.Calendar
 import com.homedashboard.app.data.model.CalendarEvent
 import com.homedashboard.app.data.model.CalendarProvider
 import com.homedashboard.app.data.model.Task
+import com.homedashboard.app.data.weather.DailyWeather
+import com.homedashboard.app.data.weather.TempUnit
+import com.homedashboard.app.data.weather.WeatherRepository
+import com.homedashboard.app.settings.CalendarSettings
+import com.homedashboard.app.settings.SettingsRepository
 import com.homedashboard.app.sync.SyncManager
 import com.homedashboard.app.sync.SyncState
 import com.homedashboard.app.sync.SyncStatus
@@ -39,32 +45,77 @@ class CalendarViewModel(
     private val taskDao: TaskDao,
     private val authManager: GoogleAuthManager? = null,
     private val iCloudAuthManager: ICloudAuthManager? = null,
-    private val syncManager: SyncManager? = null
+    private val syncManager: SyncManager? = null,
+    private val settingsRepository: SettingsRepository? = null,
+    private val weatherRepository: WeatherRepository = WeatherRepository()
 ) : ViewModel() {
 
     // Time formatter for display
     private val timeFormatter = DateTimeFormatter.ofPattern("h:mm a")
     private val dateFormatter = DateTimeFormatter.ofPattern("MMM d")
 
-    // Events grouped by date for efficient UI rendering
-    private val _eventsFlow = calendarDao.getAllEvents()
-    val eventsByDate: StateFlow<Map<LocalDate, List<CalendarEventUi>>> = _eventsFlow
-        .map { events ->
-            events
-                .filter { !it.isDeleted }
-                .groupBy { it.startTime.toLocalDate() }
-                .mapValues { (_, dayEvents) ->
-                    dayEvents.map { event ->
-                        CalendarEventUi(
-                            id = event.id,
-                            title = event.title,
-                            startTime = if (event.isAllDay) null else event.startTime.format(timeFormatter),
-                            isAllDay = event.isAllDay,
-                            color = getCalendarColor(event.calendarId)
-                        )
-                    }
+    // All calendars for settings UI
+    val calendars: StateFlow<List<Calendar>> = calendarDao.getAllCalendars()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // Settings flow
+    val calendarSettings: StateFlow<CalendarSettings> = (settingsRepository?.settings
+        ?: flowOf(CalendarSettings()))
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = CalendarSettings()
+        )
+
+    // Visible calendar IDs (for filtering events)
+    private val visibleCalendarIds: StateFlow<Set<String>> = calendarDao.getVisibleCalendars()
+        .map { cals -> cals.map { it.id }.toSet() }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptySet()
+        )
+
+    // Calendar color lookup cache
+    private val calendarColorMap: StateFlow<Map<String, Int>> = calendarDao.getAllCalendars()
+        .map { cals -> cals.associate { it.id to it.color } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
+        )
+
+    // Events grouped by date, filtered by calendar visibility
+    val eventsByDate: StateFlow<Map<LocalDate, List<CalendarEventUi>>> = combine(
+        calendarDao.getAllEvents(),
+        visibleCalendarIds,
+        calendarColorMap
+    ) { events, visibleIds, colorMap ->
+        events
+            .filter { !it.isDeleted }
+            .filter { event ->
+                // Always show local events; for synced events, check calendar visibility
+                event.providerType == CalendarProvider.LOCAL || event.calendarId in visibleIds
+            }
+            .groupBy { it.startTime.toLocalDate() }
+            .mapValues { (_, dayEvents) ->
+                dayEvents.map { event ->
+                    CalendarEventUi(
+                        id = event.id,
+                        title = event.title,
+                        startTime = if (event.isAllDay) null else event.startTime.format(timeFormatter),
+                        isAllDay = event.isAllDay,
+                        color = colorMap[event.calendarId]?.let { it.toLong() and 0xFFFFFFFFL }
+                            ?: getCalendarColor(event.calendarId),
+                        providerType = event.providerType
+                    )
                 }
-        }
+            }
+    }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -94,6 +145,9 @@ class CalendarViewModel(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    // Weather data
+    val weatherByDate: StateFlow<Map<LocalDate, DailyWeather>> = weatherRepository.weatherByDate
 
     // Dialog state
     private val _showAddEventDialog = MutableStateFlow<LocalDate?>(null)
@@ -215,6 +269,24 @@ class CalendarViewModel(
         viewModelScope.launch {
             iCloudAuthManager?.checkAuthState()
         }
+
+        // Fetch weather when settings change (if enabled)
+        viewModelScope.launch {
+            calendarSettings.collect { settings ->
+                if (settings.showWeather) {
+                    val lat = settings.weatherLocationLat
+                    val lon = settings.weatherLocationLon
+                    if (lat != null && lon != null) {
+                        val useFahrenheit = when (settings.weatherTempUnit) {
+                            TempUnit.FAHRENHEIT -> true
+                            TempUnit.CELSIUS -> false
+                            TempUnit.AUTO -> java.util.Locale.getDefault().country == "US"
+                        }
+                        weatherRepository.fetchWeather(lat, lon, useFahrenheit)
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -280,6 +352,9 @@ class CalendarViewModel(
                 (endTime ?: startTime?.plusHours(1) ?: LocalTime.of(10, 0)).atDate(date).atZone(zone)
             }
 
+            // Resolve default calendar
+            val defaultCal = resolveDefaultCalendar()
+
             val event = CalendarEvent(
                 id = UUID.randomUUID().toString(),
                 title = title,
@@ -288,14 +363,81 @@ class CalendarViewModel(
                 startTime = startDateTime,
                 endTime = endDateTime,
                 isAllDay = isAllDay,
-                calendarId = "local_default",
-                calendarName = "Local",
-                providerType = CalendarProvider.LOCAL
+                calendarId = defaultCal?.id ?: "local_default",
+                calendarName = defaultCal?.name ?: "Local",
+                providerType = defaultCal?.providerType ?: CalendarProvider.LOCAL,
+                needsSync = defaultCal != null && defaultCal.providerType != CalendarProvider.LOCAL
             )
 
             calendarDao.insertEvent(event)
             closeAddEventDialog()
         }
+    }
+
+    /**
+     * Resolve which calendar to use for new events.
+     * Priority: user-set default → first visible writable calendar → null (local)
+     */
+    private suspend fun resolveDefaultCalendar(): Calendar? {
+        val settings = calendarSettings.value
+        val defaultId = settings.defaultCalendarId
+
+        if (defaultId != null) {
+            val cal = calendarDao.getCalendarById(defaultId)
+            if (cal != null && cal.isVisible && !cal.isReadOnly) {
+                return cal
+            }
+        }
+
+        // Fallback: first visible writable calendar
+        val writable = calendarDao.getWritableVisibleCalendars()
+        return writable.firstOrNull()
+    }
+
+    // ==================== Calendar Visibility & Default ====================
+
+    fun setCalendarVisible(calendarId: String, visible: Boolean) {
+        viewModelScope.launch {
+            val cal = calendarDao.getCalendarById(calendarId)
+            if (cal != null) {
+                calendarDao.updateCalendar(cal.copy(isVisible = visible))
+            }
+        }
+    }
+
+    fun setDefaultCalendarId(calendarId: String?) {
+        viewModelScope.launch {
+            settingsRepository?.updateDefaultCalendarId(calendarId)
+        }
+    }
+
+    // ==================== Weather Settings ====================
+
+    fun updateShowWeather(show: Boolean) {
+        viewModelScope.launch {
+            settingsRepository?.updateShowWeather(show)
+        }
+    }
+
+    fun updateWeatherTempUnit(unit: com.homedashboard.app.data.weather.TempUnit) {
+        viewModelScope.launch {
+            settingsRepository?.updateWeatherTempUnit(unit)
+        }
+    }
+
+    fun updateWeatherLocation(
+        mode: com.homedashboard.app.data.weather.WeatherLocationMode,
+        lat: Double? = null,
+        lon: Double? = null,
+        name: String? = null
+    ) {
+        viewModelScope.launch {
+            settingsRepository?.updateWeatherLocation(mode, lat, lon, name)
+        }
+    }
+
+    suspend fun geocodeCity(cityName: String): Result<List<com.homedashboard.app.data.weather.GeocodingResult>> {
+        return weatherRepository.geocodeCity(cityName)
     }
 
     fun openEventDetail(event: CalendarEventUi) {
@@ -528,6 +670,20 @@ class CalendarViewModel(
         }
     }
 
+    // ==================== Debug Operations ====================
+
+    /**
+     * Reset all local data (events, calendars, tasks).
+     * Only intended for use in debug builds.
+     */
+    fun resetAllData() {
+        viewModelScope.launch {
+            calendarDao.clearAllEvents()
+            calendarDao.clearAllCalendars()
+            taskDao.clearAllTasks()
+        }
+    }
+
     // ==================== Helpers ====================
 
     private fun getCalendarColor(calendarId: String): Long {
@@ -545,7 +701,9 @@ class CalendarViewModel(
         private val taskDao: TaskDao,
         private val authManager: GoogleAuthManager? = null,
         private val iCloudAuthManager: ICloudAuthManager? = null,
-        private val syncManager: SyncManager? = null
+        private val syncManager: SyncManager? = null,
+        private val settingsRepository: SettingsRepository? = null,
+        private val weatherRepository: WeatherRepository = WeatherRepository()
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -555,7 +713,9 @@ class CalendarViewModel(
                     taskDao,
                     authManager,
                     iCloudAuthManager,
-                    syncManager
+                    syncManager,
+                    settingsRepository,
+                    weatherRepository
                 ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
