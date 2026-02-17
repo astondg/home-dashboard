@@ -40,6 +40,7 @@ fun InlineTaskWritingArea(
     isCompact: Boolean = false,
     strokeColor: Color = MaterialTheme.colorScheme.onSurface,
     onTaskTextRecognized: (String) -> Unit,
+    onHandwritingUsed: (() -> Unit)? = null,
     autoRecognizeDelayMs: Long = 1500L,
     zoneId: String = "task-list",
     stylusOnly: Boolean = true,
@@ -85,6 +86,7 @@ fun InlineTaskWritingArea(
                     is RecognitionResult.Success -> {
                         recognizedText = result.bestMatch
                         showConfirmation = true
+                        onHandwritingUsed?.invoke()
                     }
                     is RecognitionResult.Error -> {
                         // Clear and let user try again

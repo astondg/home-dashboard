@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.time.LocalDate
+import java.time.LocalTime
 
 /**
  * Service for fetching weather data from Open-Meteo API (free, no API key).
@@ -57,6 +58,59 @@ class WeatherService(
             }
 
             Result.success(forecasts)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Fetch hourly precipitation probability for today.
+     * Returns a RainForecast with the next hour where probability >= 30%.
+     */
+    suspend fun fetchHourlyPrecipitation(
+        latitude: Double,
+        longitude: Double
+    ): Result<RainForecast> = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://api.open-meteo.com/v1/forecast" +
+                "?latitude=$latitude" +
+                "&longitude=$longitude" +
+                "&hourly=precipitation_probability" +
+                "&timezone=auto" +
+                "&forecast_days=1"
+
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(Exception("Weather API error: ${response.code}"))
+            }
+
+            val body = response.body?.string()
+                ?: return@withContext Result.failure(Exception("Empty response"))
+
+            val apiResponse = gson.fromJson(body, HourlyPrecipResponse::class.java)
+            val hourly = apiResponse.hourly
+                ?: return@withContext Result.success(RainForecast(null, 0))
+
+            val now = LocalTime.now()
+
+            // Find first hour from now with probability >= 30%
+            for (i in hourly.time.indices) {
+                val hourStr = hourly.time[i]
+                val prob = hourly.precipitationProbability.getOrNull(i) ?: 0
+                // Parse hour from ISO datetime string (e.g. "2026-02-17T14:00")
+                val hourTime = try {
+                    LocalTime.parse(hourStr.substringAfter("T"))
+                } catch (_: Exception) {
+                    continue
+                }
+                if (hourTime.isAfter(now) && prob >= 30) {
+                    return@withContext Result.success(RainForecast(hourTime, prob))
+                }
+            }
+
+            Result.success(RainForecast(null, 0))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -120,6 +174,15 @@ private data class DailyData(
     val time: List<String>,
     @SerializedName("temperature_2m_max") val temperatureMax: List<Double>,
     @SerializedName("weather_code") val weatherCode: List<Int>
+)
+
+private data class HourlyPrecipResponse(
+    val hourly: HourlyPrecipData?
+)
+
+private data class HourlyPrecipData(
+    val time: List<String>,
+    @SerializedName("precipitation_probability") val precipitationProbability: List<Int>
 )
 
 private data class GeocodingResponse(

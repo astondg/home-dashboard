@@ -4,3 +4,9 @@
 
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
+
+# ical4j 3.x
+-keep,includedescriptorclasses class net.fortuna.ical4j.util.MapTimeZoneCache
+-dontwarn groovy.**
+-dontwarn org.codehaus.groovy.**
+-dontwarn org.apache.commons.logging.**

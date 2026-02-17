@@ -107,6 +107,9 @@ interface CalendarDao {
     @Query("DELETE FROM calendar_events")
     suspend fun clearAllEvents()
 
+    @Query("DELETE FROM calendar_events WHERE providerType = 'LOCAL'")
+    suspend fun clearLocalEvents()
+
     @Query("DELETE FROM calendars")
     suspend fun clearAllCalendars()
 }

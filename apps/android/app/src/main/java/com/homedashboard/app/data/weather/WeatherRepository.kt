@@ -16,6 +16,9 @@ class WeatherRepository(
     private val _weatherByDate = MutableStateFlow<Map<LocalDate, DailyWeather>>(emptyMap())
     val weatherByDate: StateFlow<Map<LocalDate, DailyWeather>> = _weatherByDate.asStateFlow()
 
+    private val _rainForecast = MutableStateFlow<RainForecast?>(null)
+    val rainForecast: StateFlow<RainForecast?> = _rainForecast.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -51,6 +54,11 @@ class WeatherRepository(
             lastFetchTime = now
             lastLat = latitude
             lastLon = longitude
+        }
+        // Fetch hourly precipitation alongside daily weather
+        val rainResult = weatherService.fetchHourlyPrecipitation(latitude, longitude)
+        rainResult.onSuccess { rain ->
+            _rainForecast.value = rain
         }
         _isLoading.value = false
     }

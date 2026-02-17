@@ -64,7 +64,9 @@ data class CalendarSettings(
     val weatherLocationLat: Double? = null,
     val weatherLocationLon: Double? = null,
     val weatherLocationName: String? = null,
-    val weatherTempUnit: TempUnit = TempUnit.AUTO
+    val weatherTempUnit: TempUnit = TempUnit.AUTO,
+    // Handwriting onboarding — hide write hints after first use
+    val hasUsedHandwriting: Boolean = false
 )
 
 // Extension to get DataStore
@@ -96,6 +98,7 @@ class SettingsRepository(private val context: Context) {
         val WEATHER_LOCATION_LON = doublePreferencesKey("weather_location_lon")
         val WEATHER_LOCATION_NAME = stringPreferencesKey("weather_location_name")
         val WEATHER_TEMP_UNIT = stringPreferencesKey("weather_temp_unit")
+        val HAS_USED_HANDWRITING = booleanPreferencesKey("has_used_handwriting")
     }
 
     val settings: Flow<CalendarSettings> = context.dataStore.data.map { preferences ->
@@ -127,7 +130,8 @@ class SettingsRepository(private val context: Context) {
             weatherLocationName = preferences[PreferencesKeys.WEATHER_LOCATION_NAME],
             weatherTempUnit = preferences[PreferencesKeys.WEATHER_TEMP_UNIT]?.let {
                 TempUnit.valueOf(it)
-            } ?: TempUnit.AUTO
+            } ?: TempUnit.AUTO,
+            hasUsedHandwriting = preferences[PreferencesKeys.HAS_USED_HANDWRITING] ?: false
         )
     }
 
@@ -228,6 +232,12 @@ class SettingsRepository(private val context: Context) {
     suspend fun updateWeatherTempUnit(unit: TempUnit) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.WEATHER_TEMP_UNIT] = unit.name
+        }
+    }
+
+    suspend fun markHandwritingUsed() {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HAS_USED_HANDWRITING] = true
         }
     }
 

@@ -53,16 +53,25 @@ class CalDavService(
 
                 val response = okHttpClient.newCall(request).execute()
 
+                Log.d(TAG, "listCalendars: PROPFIND $calendarHomeUrl → ${response.code}")
+
                 when (response.code) {
-                    401, 403 -> return@withContext Result.failure(CalDavAuthException())
-                    404 -> return@withContext Result.failure(CalDavNotFoundException("Calendar home not found", calendarHomeUrl))
-                    in 500..599 -> return@withContext Result.failure(CalDavServerException(response.code))
+                    401, 403 -> {
+                        Log.e(TAG, "listCalendars: auth failed (${response.code}) for $calendarHomeUrl")
+                        return@withContext Result.failure(CalDavAuthException())
+                    }
+                    404 -> {
+                        Log.e(TAG, "listCalendars: 404 not found: $calendarHomeUrl")
+                        return@withContext Result.failure(CalDavNotFoundException("Calendar home not found", calendarHomeUrl))
+                    }
+                    in 500..599 -> {
+                        Log.e(TAG, "listCalendars: server error ${response.code} for $calendarHomeUrl")
+                        return@withContext Result.failure(CalDavServerException(response.code))
+                    }
                 }
 
                 val body = response.body?.string()
                     ?: return@withContext Result.failure(CalDavParseException("Empty response"))
-
-                Log.d(TAG, "Calendar list response: $body")
 
                 val calendarList = xmlParser.parseCalendarList(body)
                 Result.success(calendarList.calendars)
@@ -103,20 +112,29 @@ class CalDavService(
 
             val response = okHttpClient.newCall(request).execute()
 
+            Log.d(TAG, "syncEvents: REPORT $calendarUrl → ${response.code}")
+
             when (response.code) {
-                401, 403 -> return@withContext Result.failure(CalDavAuthException())
-                404 -> return@withContext Result.failure(CalDavNotFoundException("Calendar not found", calendarUrl))
+                401, 403 -> {
+                    Log.e(TAG, "syncEvents: auth failed (${response.code})")
+                    return@withContext Result.failure(CalDavAuthException())
+                }
+                404 -> {
+                    Log.e(TAG, "syncEvents: 404 not found: $calendarUrl")
+                    return@withContext Result.failure(CalDavNotFoundException("Calendar not found", calendarUrl))
+                }
                 410 -> {
-                    // Sync token expired
+                    Log.w(TAG, "syncEvents: sync token expired (410)")
                     return@withContext Result.failure(CalDavSyncTokenExpiredException())
                 }
-                in 500..599 -> return@withContext Result.failure(CalDavServerException(response.code))
+                in 500..599 -> {
+                    Log.e(TAG, "syncEvents: server error ${response.code}")
+                    return@withContext Result.failure(CalDavServerException(response.code))
+                }
             }
 
             val body = response.body?.string()
                 ?: return@withContext Result.failure(CalDavParseException("Empty response"))
-
-            Log.d(TAG, "Sync response (first 500 chars): ${body.take(500)}")
 
             val syncResponse = xmlParser.parseSyncCollectionResponse(body)
             Result.success(syncResponse)
@@ -160,16 +178,28 @@ class CalDavService(
 
             val response = okHttpClient.newCall(request).execute()
 
+            Log.d(TAG, "getEventsInRange: REPORT $calendarUrl → ${response.code}")
+
             when (response.code) {
-                401, 403 -> return@withContext Result.failure(CalDavAuthException())
-                404 -> return@withContext Result.failure(CalDavNotFoundException("Calendar not found", calendarUrl))
-                in 500..599 -> return@withContext Result.failure(CalDavServerException(response.code))
+                401, 403 -> {
+                    Log.e(TAG, "getEventsInRange: auth failed (${response.code})")
+                    return@withContext Result.failure(CalDavAuthException())
+                }
+                404 -> {
+                    Log.e(TAG, "getEventsInRange: 404 not found: $calendarUrl")
+                    return@withContext Result.failure(CalDavNotFoundException("Calendar not found", calendarUrl))
+                }
+                in 500..599 -> {
+                    Log.e(TAG, "getEventsInRange: server error ${response.code}")
+                    return@withContext Result.failure(CalDavServerException(response.code))
+                }
             }
 
             val body = response.body?.string()
                 ?: return@withContext Result.failure(CalDavParseException("Empty response"))
 
             val queryResponse = xmlParser.parseCalendarQueryResponse(body)
+            Log.d(TAG, "getEventsInRange: got ${queryResponse.events.size} events")
             Result.success(queryResponse.events)
         } catch (e: CalDavException) {
             Result.failure(e)

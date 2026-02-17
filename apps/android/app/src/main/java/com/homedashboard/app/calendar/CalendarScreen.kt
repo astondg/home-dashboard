@@ -8,14 +8,8 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.AcUnit
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Grain
-import androidx.compose.material.icons.filled.Thunderstorm
 import androidx.compose.material.icons.filled.ViewDay
 import androidx.compose.material.icons.filled.ViewWeek
-import androidx.compose.material.icons.filled.WbCloudy
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,13 +20,13 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import com.homedashboard.app.calendar.components.TaskUi
 import com.homedashboard.app.calendar.layouts.*
+import com.homedashboard.app.data.weather.RainForecast
 import com.homedashboard.app.handwriting.HandwritingRecognizer
 import com.homedashboard.app.handwriting.NaturalLanguageParser
 import com.homedashboard.app.handwriting.ParsedEvent
 import com.homedashboard.app.BuildConfig
 import com.homedashboard.app.settings.CalendarLayoutType
 import com.homedashboard.app.settings.CalendarSettings
-import com.homedashboard.app.settings.DisplayDetection
 import com.homedashboard.app.ui.theme.LocalDimensions
 import com.homedashboard.app.ui.theme.LocalIsEInk
 import java.time.LocalDate
@@ -51,10 +45,12 @@ fun CalendarScreen(
     eventsMap: Map<LocalDate, List<CalendarEventUi>> = emptyMap(),
     tasks: List<TaskUi> = emptyList(),
     weatherByDate: Map<LocalDate, com.homedashboard.app.data.weather.DailyWeather> = emptyMap(),
+    rainForecast: RainForecast? = null,
     // Inline handwriting support
     recognizer: HandwritingRecognizer? = null,
     parser: NaturalLanguageParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
+    onHandwritingUsed: (() -> Unit)? = null,
     // Callbacks
     onSettingsClick: () -> Unit = {},
     onLayoutChange: (CalendarLayoutType) -> Unit = {},
@@ -77,13 +73,16 @@ fun CalendarScreen(
         (0 until 7).map { startDate.plusDays(it.toLong()) }
     }
 
+    // Hide write hints after user has written their first event
+    val showWriteHints = !settings.hasUsedHandwriting
+
     // Boox pen setup is now at the Activity level (MainActivity).
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-            // Header
+            // Header with integrated info (rain indicator + next event)
             CalendarHeader(
                 startDate = startDate,
                 endDate = startDate.plusDays(6),
@@ -93,14 +92,11 @@ fun CalendarScreen(
                 onTodayClick = { startDate = LocalDate.now() },
                 onSettingsClick = onSettingsClick,
                 onLayoutChange = onLayoutChange,
-                onResetData = onResetData
-            )
-
-            // Glanceable info strip: current time + next event + weather
-            GlanceableInfoStrip(
+                onResetData = onResetData,
                 eventsMap = eventsMap,
                 use24HourFormat = settings.use24HourFormat,
-                todayWeather = if (settings.showWeather) weatherByDate[LocalDate.now()] else null
+                rainForecast = if (settings.showWeather) rainForecast else null,
+                showWeather = settings.showWeather
             )
 
             // Calendar content with optional Boox overlay
@@ -114,10 +110,12 @@ fun CalendarScreen(
                             tasks = tasks,
                             modifier = Modifier.fillMaxSize(),
                             weatherByDate = if (settings.showWeather) weatherByDate else emptyMap(),
+                            showWriteHints = showWriteHints,
                             recognizer = recognizer,
                             parser = parser,
                             onInlineEventCreated = onInlineEventCreated,
                             onTaskTextRecognized = onTaskTextRecognized,
+                            onHandwritingUsed = onHandwritingUsed,
                             onAddEventClick = onAddEventClick,
                             onWriteClick = onWriteClick,
                             onAddTaskClick = onAddTaskClick,
@@ -136,12 +134,14 @@ fun CalendarScreen(
                             tasks = tasks,
                             modifier = Modifier.fillMaxSize(),
                             weatherByDate = if (settings.showWeather) weatherByDate else emptyMap(),
+                            showWriteHints = showWriteHints,
                             showTasks = settings.showTasks,
                             showQuickAdd = settings.showQuickAdd,
                             recognizer = recognizer,
                             parser = parser,
                             onInlineEventCreated = onInlineEventCreated,
                             onTaskTextRecognized = onTaskTextRecognized,
+                            onHandwritingUsed = onHandwritingUsed,
                             onAddEventClick = onAddEventClick,
                             onWriteClick = onWriteClick,
                             onAddTaskClick = onAddTaskClick,
@@ -165,6 +165,8 @@ fun CalendarScreen(
                             parser = parser,
                             onInlineEventCreated = onInlineEventCreated,
                             onTaskTextRecognized = onTaskTextRecognized,
+                            onHandwritingUsed = onHandwritingUsed,
+                            showWriteHints = showWriteHints,
                             onAddEventClick = onAddEventClick,
                             onWriteClick = onWriteClick,
                             onAddTaskClick = onAddTaskClick,
@@ -195,7 +197,11 @@ private fun CalendarHeader(
     onTodayClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onLayoutChange: (CalendarLayoutType) -> Unit,
-    onResetData: (() -> Unit)? = null
+    onResetData: (() -> Unit)? = null,
+    eventsMap: Map<LocalDate, List<CalendarEventUi>> = emptyMap(),
+    use24HourFormat: Boolean = false,
+    rainForecast: RainForecast? = null,
+    showWeather: Boolean = false
 ) {
     val dims = LocalDimensions.current
     var showLayoutMenu by remember { mutableStateOf(false) }
@@ -212,6 +218,48 @@ private fun CalendarHeader(
 
     val isEInk = LocalIsEInk.current
 
+    // Compute next event label for info section
+    val today = LocalDate.now()
+    val todayEvents = eventsMap[today] ?: emptyList()
+
+    // Update current time every minute for event comparison
+    var currentTime by remember { mutableStateOf(LocalTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTime = LocalTime.now()
+            delay(60_000L)
+        }
+    }
+
+    val timeFormatter12 = DateTimeFormatter.ofPattern("h:mm a")
+
+    val nextEvent = todayEvents
+        .filter { !it.isAllDay && it.startTime != null }
+        .sortedBy { it.startTime }
+        .firstOrNull { event ->
+            try {
+                val eventTime = LocalTime.parse(event.startTime, DateTimeFormatter.ofPattern("h:mm a"))
+                eventTime.isAfter(currentTime)
+            } catch (_: Exception) {
+                try {
+                    val eventTime = LocalTime.parse(event.startTime, DateTimeFormatter.ofPattern("H:mm"))
+                    eventTime.isAfter(currentTime)
+                } catch (_: Exception) {
+                    false
+                }
+            }
+        }
+
+    // Rain indicator text
+    val rainLabel = if (rainForecast?.nextRainTime != null) {
+        val rainTimeStr = if (use24HourFormat) {
+            rainForecast.nextRainTime.format(DateTimeFormatter.ofPattern("H:mm"))
+        } else {
+            rainForecast.nextRainTime.format(DateTimeFormatter.ofPattern("h a")).lowercase()
+        }
+        "Rain ~$rainTimeStr"
+    } else null
+
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = if (isEInk) 0.dp else 2.dp
@@ -223,7 +271,7 @@ private fun CalendarHeader(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Navigation
+            // Navigation (start)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -257,7 +305,41 @@ private fun CalendarHeader(
                 }
             }
 
-            // Actions
+            // Info section (center, weighted)
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Rain indicator
+                if (rainLabel != null) {
+                    Text(
+                        text = "\u2602 $rainLabel",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1
+                    )
+                    if (nextEvent != null) {
+                        Spacer(modifier = Modifier.width(16.dp))
+                    }
+                }
+
+                // Next event
+                if (nextEvent != null) {
+                    Text(
+                        text = "Next: ${nextEvent.title} at ${nextEvent.startTime}",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Actions (end)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -372,8 +454,8 @@ private fun CalendarHeader(
     if (showResetConfirmation && onResetData != null) {
         AlertDialog(
             onDismissRequest = { showResetConfirmation = false },
-            title = { Text("Reset All Data") },
-            text = { Text("This will delete all events, calendars, and tasks. This cannot be undone.") },
+            title = { Text("Reset Local Data") },
+            text = { Text("This will delete locally created events and tasks. Synced calendar data will be preserved. This cannot be undone.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -390,156 +472,6 @@ private fun CalendarHeader(
                 }
             }
         )
-    }
-}
-
-/**
- * Info strip showing current time and next upcoming event.
- * Visible across all layout views.
- */
-@Composable
-private fun GlanceableInfoStrip(
-    eventsMap: Map<LocalDate, List<CalendarEventUi>>,
-    use24HourFormat: Boolean,
-    todayWeather: com.homedashboard.app.data.weather.DailyWeather? = null
-) {
-    val dims = LocalDimensions.current
-    val isEInk = LocalIsEInk.current
-
-    // Update current time every minute
-    var currentTime by remember { mutableStateOf(LocalTime.now()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            currentTime = LocalTime.now()
-            delay(60_000L)
-        }
-    }
-
-    val timeFormatter = if (use24HourFormat) {
-        DateTimeFormatter.ofPattern("H:mm")
-    } else {
-        DateTimeFormatter.ofPattern("h:mm a")
-    }
-
-    // Find next upcoming event
-    val today = LocalDate.now()
-    val todayEvents = eventsMap[today] ?: emptyList()
-    val tomorrow = today.plusDays(1)
-    val tomorrowEvents = eventsMap[tomorrow] ?: emptyList()
-
-    // Find next event: first non-all-day event after current time today, or first tomorrow
-    val nextEvent = todayEvents
-        .filter { !it.isAllDay && it.startTime != null }
-        .sortedBy { it.startTime }
-        .firstOrNull { event ->
-            // Parse the time string back for comparison
-            try {
-                val eventTime = LocalTime.parse(event.startTime, DateTimeFormatter.ofPattern("h:mm a"))
-                eventTime.isAfter(currentTime)
-            } catch (_: Exception) {
-                try {
-                    val eventTime = LocalTime.parse(event.startTime, DateTimeFormatter.ofPattern("H:mm"))
-                    eventTime.isAfter(currentTime)
-                } catch (_: Exception) {
-                    false
-                }
-            }
-        }
-
-    val nextEventLabel = if (nextEvent != null) {
-        "Next: ${nextEvent.title} at ${nextEvent.startTime}"
-    } else {
-        // Check tomorrow
-        val tomorrowFirst = tomorrowEvents
-            .filter { !it.isAllDay && it.startTime != null }
-            .sortedBy { it.startTime }
-            .firstOrNull()
-        if (tomorrowFirst != null) {
-            "Tomorrow: ${tomorrowFirst.title} at ${tomorrowFirst.startTime}"
-        } else {
-            "No upcoming events"
-        }
-    }
-
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = if (isEInk) 0.dp else 1.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Current time
-            Text(
-                text = currentTime.format(timeFormatter),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-
-            // Weather (if available)
-            if (todayWeather != null) {
-                Row(
-                    modifier = Modifier.padding(start = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = weatherIconVector(todayWeather.icon),
-                        contentDescription = todayWeather.icon.name,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "${todayWeather.maxTemp}\u00B0",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            // Next event
-            Text(
-                text = nextEventLabel,
-                style = MaterialTheme.typography.titleMedium,
-                color = if (nextEvent != null) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .padding(start = 24.dp)
-            )
-        }
-
-        // Bottom border on e-ink
-        if (isEInk) {
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant,
-                thickness = 1.dp
-            )
-        }
-    }
-}
-
-/**
- * Map WeatherIcon enum to Material Icon vectors.
- */
-private fun weatherIconVector(icon: com.homedashboard.app.data.weather.WeatherIcon): androidx.compose.ui.graphics.vector.ImageVector {
-    return when (icon) {
-        com.homedashboard.app.data.weather.WeatherIcon.SUNNY -> Icons.Default.WbSunny
-        com.homedashboard.app.data.weather.WeatherIcon.PARTLY_CLOUDY -> Icons.Default.WbCloudy
-        com.homedashboard.app.data.weather.WeatherIcon.CLOUDY -> Icons.Default.Cloud
-        com.homedashboard.app.data.weather.WeatherIcon.FOGGY -> Icons.Default.Cloud
-        com.homedashboard.app.data.weather.WeatherIcon.DRIZZLE -> Icons.Default.Grain
-        com.homedashboard.app.data.weather.WeatherIcon.RAIN -> Icons.Default.Grain
-        com.homedashboard.app.data.weather.WeatherIcon.SNOW -> Icons.Default.AcUnit
-        com.homedashboard.app.data.weather.WeatherIcon.THUNDERSTORM -> Icons.Default.Thunderstorm
     }
 }
 

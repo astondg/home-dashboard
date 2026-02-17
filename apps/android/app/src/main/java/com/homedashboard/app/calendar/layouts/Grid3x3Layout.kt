@@ -34,11 +34,13 @@ fun Grid3x3Layout(
     tasks: List<TaskUi>,
     modifier: Modifier = Modifier,
     weatherByDate: Map<LocalDate, DailyWeather> = emptyMap(),
+    showWriteHints: Boolean = true,
     // Inline handwriting support
     recognizer: HandwritingRecognizer? = null,
     parser: NaturalLanguageParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
     onTaskTextRecognized: ((String) -> Unit)? = null,
+    onHandwritingUsed: (() -> Unit)? = null,
     // Callbacks
     onAddEventClick: (LocalDate) -> Unit = {},
     onWriteClick: (LocalDate) -> Unit = {},
@@ -82,7 +84,9 @@ fun Grid3x3Layout(
                     onAddClick = { onAddEventClick(date) },
                     onWriteClick = { onWriteClick(date) },
                     onHandwritingInput = { text -> onHandwritingInput(date, text) },
-                    onEventClick = onEventClick
+                    onEventClick = onEventClick,
+                    onHandwritingUsed = onHandwritingUsed,
+                    showWriteHint = showWriteHints
                 )
             }
         }
@@ -111,7 +115,9 @@ fun Grid3x3Layout(
                     onAddClick = { onAddEventClick(date) },
                     onWriteClick = { onWriteClick(date) },
                     onHandwritingInput = { text -> onHandwritingInput(date, text) },
-                    onEventClick = onEventClick
+                    onEventClick = onEventClick,
+                    onHandwritingUsed = onHandwritingUsed,
+                    showWriteHint = showWriteHints
                 )
             }
         }
@@ -141,7 +147,9 @@ fun Grid3x3Layout(
                     onAddClick = { onAddEventClick(days[6]) },
                     onWriteClick = { onWriteClick(days[6]) },
                     onHandwritingInput = { text -> onHandwritingInput(days[6], text) },
-                    onEventClick = onEventClick
+                    onEventClick = onEventClick,
+                    onHandwritingUsed = onHandwritingUsed,
+                    showWriteHint = showWriteHints
                 )
             }
 
@@ -164,8 +172,10 @@ fun Grid3x3Layout(
                     isCompact = false,
                     showCompleted = true,
                     showAddButton = true,
+                    showWriteHint = showWriteHints,
                     recognizer = recognizer,
                     onTaskTextRecognized = onTaskTextRecognized,
+                    onHandwritingUsed = onHandwritingUsed,
                     onTaskToggle = onTaskToggle,
                     onTaskClick = onTaskClick,
                     onAddTask = onAddTaskClick

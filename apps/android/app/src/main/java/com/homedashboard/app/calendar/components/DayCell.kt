@@ -70,6 +70,7 @@ fun DayCell(
     recognizer: HandwritingRecognizer? = null,
     parser: NaturalLanguageParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
+    onHandwritingUsed: (() -> Unit)? = null,
     // Legacy callbacks
     onAddClick: (() -> Unit)? = null,
     onWriteClick: (() -> Unit)? = null,
@@ -188,6 +189,7 @@ fun DayCell(
                     modifier = Modifier.fillMaxSize(),
                     isCompact = isCompact,
                     onEventCreated = onInlineEventCreated,
+                    onHandwritingUsed = onHandwritingUsed,
                     stylusOnly = true,
                     onFingerTap = null
                 )
@@ -265,29 +267,43 @@ private fun DayCellHeader(
     val dims = LocalDimensions.current
     val isEInk = LocalIsEInk.current
 
-    // On e-ink, today gets an inverted (black bg, white text) header for max distinction
-    val todayInverted = isToday && isEInk
-    val headerBg = if (todayInverted) Color.Black else Color.Transparent
+    val headerBg = Color.Transparent
 
     val primaryColor = when {
-        todayInverted -> Color.White
-        isToday -> MaterialTheme.colorScheme.primary
+        isToday -> MaterialTheme.colorScheme.onSurface
         else -> MaterialTheme.colorScheme.onSurface
     }
 
     val secondaryColor = when {
-        todayInverted -> Color.White.copy(alpha = 0.85f)
-        isToday -> MaterialTheme.colorScheme.primary
+        isToday -> MaterialTheme.colorScheme.onSurfaceVariant
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    val addButtonTint = if (todayInverted) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+    val addButtonTint = MaterialTheme.colorScheme.onSurfaceVariant
+
+    // Today gets a thick left border accent drawn via drawWithContent
+    val todayAccentModifier = if (isToday) {
+        Modifier.drawWithContent {
+            drawContent()
+            drawRect(
+                color = Color.Black,
+                topLeft = androidx.compose.ui.geometry.Offset.Zero,
+                size = androidx.compose.ui.geometry.Size(
+                    width = 4.dp.toPx(),
+                    height = size.height
+                )
+            )
+        }
+    } else {
+        Modifier
+    }
 
     when (layout) {
         DayHeaderLayout.VERTICAL -> {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(todayAccentModifier)
                     .background(headerBg)
                     .padding(
                         horizontal = if (isCompact) 4.dp else dims.cellHeaderPaddingHorizontal,
@@ -310,7 +326,7 @@ private fun DayCellHeader(
                     Text(
                         text = date.dayOfMonth.toString(),
                         style = if (isCompact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineLarge,
-                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                        fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Normal,
                         color = primaryColor
                     )
                 }
@@ -335,6 +351,7 @@ private fun DayCellHeader(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(todayAccentModifier)
                     .background(headerBg)
                     .padding(
                         horizontal = if (isCompact) 6.dp else dims.cellHeaderPaddingHorizontal,
@@ -351,7 +368,7 @@ private fun DayCellHeader(
                     Text(
                         text = date.dayOfMonth.toString(),
                         style = if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,
-                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.SemiBold,
+                        fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold,
                         color = primaryColor
                     )
 
@@ -372,13 +389,13 @@ private fun DayCellHeader(
                     Icon(
                         imageVector = weatherIconForDayCell(weather.icon),
                         contentDescription = weather.icon.name,
-                        modifier = Modifier.size(if (isCompact) 14.dp else 18.dp),
+                        modifier = Modifier.size(if (isCompact) 22.dp else 28.dp),
                         tint = secondaryColor
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
                         text = "${weather.maxTemp}\u00B0",
-                        style = if (isCompact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyMedium,
+                        style = if (isCompact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall,
                         color = secondaryColor
                     )
                     Spacer(modifier = Modifier.width(if (isCompact) 4.dp else 8.dp))
@@ -414,7 +431,7 @@ private fun WriteHint(
     val hintColor = if (isEInk) {
         Color(0xFFA0A0A0)
     } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
     }
 
     Box(
@@ -428,12 +445,23 @@ private fun WriteHint(
             ),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            Icons.Default.Edit,
-            contentDescription = "Write to add event",
-            tint = hintColor,
-            modifier = Modifier.size(if (isCompact) 14.dp else if (isWallCalendar) 20.dp else 16.dp)
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                Icons.Default.Edit,
+                contentDescription = "Write to add event",
+                tint = hintColor,
+                modifier = Modifier.size(if (isCompact) 24.dp else if (isWallCalendar) 36.dp else 28.dp)
+            )
+            Spacer(modifier = Modifier.height(if (isCompact) 2.dp else 4.dp))
+            Text(
+                text = "write events here",
+                style = if (isCompact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyMedium,
+                color = hintColor
+            )
+        }
     }
 }
 
@@ -515,7 +543,7 @@ fun EventChip(
             // Title (left, takes remaining space)
             Text(
                 text = event.title,
-                style = if (isCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleLarge,
+                style = if (isCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.headlineSmall,
                 maxLines = if (isCompact) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false)
@@ -526,7 +554,7 @@ fun EventChip(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = event.startTime,
-                    style = if (isCompact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.titleMedium,
+                    style = if (isCompact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
@@ -554,12 +582,14 @@ fun TimelineDayCell(
     modifier: Modifier = Modifier,
     isToday: Boolean = false,
     showAddButton: Boolean = true,
+    showWriteHint: Boolean = true,
     maxVisibleEvents: Int = 3,
     weather: DailyWeather? = null,
     // Inline handwriting (direct writing in cell)
     recognizer: HandwritingRecognizer? = null,
     parser: NaturalLanguageParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
+    onHandwritingUsed: (() -> Unit)? = null,
     // Legacy callbacks
     onAddClick: (() -> Unit)? = null,
     onWriteClick: (() -> Unit)? = null,
@@ -625,12 +655,12 @@ fun TimelineDayCell(
                         Icon(
                             imageVector = weatherIconForDayCell(weather.icon),
                             contentDescription = weather.icon.name,
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(22.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
                             text = "${weather.maxTemp}\u00B0",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -667,11 +697,13 @@ fun TimelineDayCell(
         ) {
             // Layer 1: Events (receives finger taps)
             if (events.isEmpty()) {
-                WriteHint(
-                    modifier = Modifier.fillMaxSize(),
-                    isCompact = true,
-                    onClick = if (recognizer == null) onWriteClick else null
-                )
+                if (showWriteHint) {
+                    WriteHint(
+                        modifier = Modifier.fillMaxSize(),
+                        isCompact = true,
+                        onClick = if (recognizer == null) onWriteClick else null
+                    )
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -711,6 +743,7 @@ fun TimelineDayCell(
                     modifier = Modifier.fillMaxSize(),
                     isCompact = true,
                     onEventCreated = onInlineEventCreated,
+                    onHandwritingUsed = onHandwritingUsed,
                     stylusOnly = true,
                     onFingerTap = null
                 )

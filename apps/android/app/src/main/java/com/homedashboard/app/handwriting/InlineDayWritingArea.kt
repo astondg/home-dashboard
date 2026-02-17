@@ -20,7 +20,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import android.util.Log
 import com.homedashboard.app.ui.theme.LocalDimensions
 import com.homedashboard.app.ui.theme.LocalIsEInk
 import kotlinx.coroutines.Job
@@ -28,8 +27,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
-
-private const val TAG = "WritingDebug"
 
 /**
  * Inline writing area that can be embedded directly in a day cell.
@@ -49,6 +46,7 @@ fun InlineDayWritingArea(
     isCompact: Boolean = false,
     strokeColor: Color = MaterialTheme.colorScheme.onSurface,
     onEventCreated: (ParsedEvent) -> Unit,
+    onHandwritingUsed: (() -> Unit)? = null,
     autoRecognizeDelayMs: Long = 1500L,
     zoneId: String = "day-${date}",
     stylusOnly: Boolean = true,
@@ -83,25 +81,22 @@ fun InlineDayWritingArea(
 
     // Function to trigger recognition
     fun triggerRecognition() {
-        Log.d(TAG, "InlineDayWritingArea[$zoneId]: triggerRecognition hasStrokes=${inkBuilder.hasStrokes()}, isRecognizing=$isRecognizing, recognizerReady=${recognizer.isReady()}")
         if (inkBuilder.hasStrokes() && !isRecognizing) {
             isRecognizing = true
             scope.launch {
                 val ink = inkBuilder.build()
-                Log.d(TAG, "InlineDayWritingArea[$zoneId]: recognizing ${ink.strokes.size} strokes")
                 when (val result = recognizer.recognize(
                     ink,
                     writingAreaWidth = canvasSize.width.toFloat(),
                     writingAreaHeight = canvasSize.height.toFloat()
                 )) {
                     is RecognitionResult.Success -> {
-                        Log.d(TAG, "InlineDayWritingArea[$zoneId]: recognized '${result.bestMatch}'")
                         recognizedText = result.bestMatch
                         parsedEvent = parser.parse(result.bestMatch, date)
                         showConfirmation = true
+                        onHandwritingUsed?.invoke()
                     }
                     is RecognitionResult.Error -> {
-                        Log.e(TAG, "InlineDayWritingArea[$zoneId]: recognition error: ${result.message}")
                         // Clear and let user try again
                         strokes.clear()
                         inkBuilder.clear()
@@ -123,13 +118,9 @@ fun InlineDayWritingArea(
         autoRecognizeJob?.cancel()
     }
 
-    // Drawing event listener that bridges AdaptiveWritingArea to InkBuilder
-    Log.d(TAG, "InlineDayWritingArea composed: date=$date, zoneId='$zoneId', recognizerReady=${recognizer.isReady()}")
-
     val drawingListener = remember(strokeColor, strokeWidthPx) {
         object : DrawingEventListener {
             override fun onStrokeStart(x: Float, y: Float, timestamp: Long) {
-                Log.d(TAG, "InlineDayWritingArea[$zoneId]: onStrokeStart($x, $y)")
                 autoRecognizeJob?.cancel()
                 showConfirmation = false
                 val newStroke = StrokeData(
@@ -147,7 +138,6 @@ fun InlineDayWritingArea(
             }
 
             override fun onStrokeEnd() {
-                Log.d(TAG, "InlineDayWritingArea[$zoneId]: onStrokeEnd, totalStrokes=${strokes.size + 1}")
                 currentStroke?.let { stroke -> strokes.add(stroke) }
                 currentStroke = null
                 inkBuilder.finishStroke()
@@ -273,7 +263,7 @@ fun InlineDayWritingArea(
                             textStyle = (if (isCompact) {
                                 MaterialTheme.typography.bodyMedium
                             } else {
-                                MaterialTheme.typography.titleLarge
+                                MaterialTheme.typography.headlineSmall
                             }).copy(
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -295,20 +285,22 @@ fun InlineDayWritingArea(
 
                         Spacer(modifier = Modifier.height(if (isCompact) 6.dp else 12.dp))
 
-                        // Time display (tappable) OR all-day
-                        var showTimePicker by remember { mutableStateOf(false) }
-
+                        // Inline time picker (always visible unless all-day)
                         if (!editIsAllDay) {
-                            Text(
-                                text = String.format("%d:%02d", editHour, editMinute),
-                                style = if (isCompact) {
-                                    MaterialTheme.typography.bodyLarge
-                                } else {
-                                    MaterialTheme.typography.headlineSmall
-                                },
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.clickable { showTimePicker = true }
-                            )
+                            @OptIn(ExperimentalMaterial3Api::class)
+                            run {
+                                val timePickerState = rememberTimePickerState(
+                                    initialHour = editHour,
+                                    initialMinute = editMinute,
+                                    is24Hour = true
+                                )
+                                // Sync state back to edit fields
+                                LaunchedEffect(timePickerState.hour, timePickerState.minute) {
+                                    editHour = timePickerState.hour
+                                    editMinute = timePickerState.minute
+                                }
+                                TimeInput(state = timePickerState)
+                            }
                         }
 
                         // All-day toggle
@@ -320,7 +312,7 @@ fun InlineDayWritingArea(
                             Checkbox(
                                 checked = editIsAllDay,
                                 onCheckedChange = { editIsAllDay = it },
-                                modifier = Modifier.size(if (isCompact) 24.dp else 32.dp)
+                                modifier = Modifier.size(if (isCompact) 24.dp else 40.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
@@ -328,23 +320,9 @@ fun InlineDayWritingArea(
                                 style = if (isCompact) {
                                     MaterialTheme.typography.bodySmall
                                 } else {
-                                    MaterialTheme.typography.bodyMedium
+                                    MaterialTheme.typography.titleMedium
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        // TimeInput dialog
-                        if (showTimePicker) {
-                            TimeInputDialog(
-                                initialHour = editHour,
-                                initialMinute = editMinute,
-                                onConfirm = { hour, minute ->
-                                    editHour = hour
-                                    editMinute = minute
-                                    showTimePicker = false
-                                },
-                                onDismiss = { showTimePicker = false }
                             )
                         }
 
@@ -389,39 +367,4 @@ fun InlineDayWritingArea(
             }
         }
     }
-}
-
-/**
- * Dialog wrapping Material 3 TimeInput for picking a time.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TimeInputDialog(
-    initialHour: Int,
-    initialMinute: Int,
-    onConfirm: (hour: Int, minute: Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val state = rememberTimePickerState(
-        initialHour = initialHour,
-        initialMinute = initialMinute,
-        is24Hour = true
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = { onConfirm(state.hour, state.minute) }) {
-                Text("OK")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-        text = {
-            TimeInput(state = state)
-        }
-    )
 }

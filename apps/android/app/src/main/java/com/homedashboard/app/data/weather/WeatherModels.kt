@@ -1,6 +1,7 @@
 package com.homedashboard.app.data.weather
 
 import java.time.LocalDate
+import java.time.LocalTime
 
 data class DailyWeather(
     val date: LocalDate,
@@ -35,6 +36,11 @@ enum class WeatherIcon {
         }
     }
 }
+
+data class RainForecast(
+    val nextRainTime: LocalTime?,
+    val probability: Int
+)
 
 enum class TempUnit {
     AUTO, CELSIUS, FAHRENHEIT

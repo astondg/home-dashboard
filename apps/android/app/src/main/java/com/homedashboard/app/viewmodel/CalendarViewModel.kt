@@ -19,6 +19,7 @@ import com.homedashboard.app.data.model.CalendarEvent
 import com.homedashboard.app.data.model.CalendarProvider
 import com.homedashboard.app.data.model.Task
 import com.homedashboard.app.data.weather.DailyWeather
+import com.homedashboard.app.data.weather.RainForecast
 import com.homedashboard.app.data.weather.TempUnit
 import com.homedashboard.app.data.weather.WeatherRepository
 import com.homedashboard.app.settings.CalendarSettings
@@ -148,6 +149,7 @@ class CalendarViewModel(
 
     // Weather data
     val weatherByDate: StateFlow<Map<LocalDate, DailyWeather>> = weatherRepository.weatherByDate
+    val rainForecast: StateFlow<RainForecast?> = weatherRepository.rainForecast
 
     // Dialog state
     private val _showAddEventDialog = MutableStateFlow<LocalDate?>(null)
@@ -440,6 +442,12 @@ class CalendarViewModel(
         return weatherRepository.geocodeCity(cityName)
     }
 
+    fun markHandwritingUsed() {
+        viewModelScope.launch {
+            settingsRepository?.markHandwritingUsed()
+        }
+    }
+
     fun openEventDetail(event: CalendarEventUi) {
         viewModelScope.launch {
             // Fetch full event details from database
@@ -673,13 +681,13 @@ class CalendarViewModel(
     // ==================== Debug Operations ====================
 
     /**
-     * Reset all local data (events, calendars, tasks).
+     * Reset locally created data only (local events and tasks).
+     * Synced calendar events and calendars are preserved.
      * Only intended for use in debug builds.
      */
-    fun resetAllData() {
+    fun resetLocalData() {
         viewModelScope.launch {
-            calendarDao.clearAllEvents()
-            calendarDao.clearAllCalendars()
+            calendarDao.clearLocalEvents()
             taskDao.clearAllTasks()
         }
     }

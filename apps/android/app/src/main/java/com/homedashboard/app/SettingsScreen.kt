@@ -189,61 +189,89 @@ fun SettingsScreen(
                 }
 
                 item {
-                    SettingsSection(title = "Calendars")
-                }
+                    var expanded by remember { mutableStateOf(false) }
+                    val visibleCount = calendars.count { it.isVisible }
+                    val totalCount = calendars.size
 
-                // Google calendars
-                val googleCalendars = calendars.filter { it.providerType == CalendarProvider.GOOGLE }
-                if (googleCalendars.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Google",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                        )
-                    }
-                    items(googleCalendars, key = { it.id }) { calendar ->
-                        CalendarToggleRow(
-                            calendar = calendar,
-                            onVisibilityChange = { visible ->
-                                onCalendarVisibilityChange(calendar.id, visible)
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { expanded = !expanded }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Calendars",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "$visibleCount of $totalCount visible",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                        )
-                    }
-                }
+                            Icon(
+                                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (expanded) "Collapse" else "Expand",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
 
-                // iCloud calendars
-                val iCloudCalendars = calendars.filter { it.providerType == CalendarProvider.ICLOUD }
-                if (iCloudCalendars.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "iCloud",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                        )
-                    }
-                    items(iCloudCalendars, key = { it.id }) { calendar ->
-                        CalendarToggleRow(
-                            calendar = calendar,
-                            onVisibilityChange = { visible ->
-                                onCalendarVisibilityChange(calendar.id, visible)
+                        if (expanded) {
+                            // Google calendars
+                            val googleCalendars = calendars.filter { it.providerType == CalendarProvider.GOOGLE }
+                            if (googleCalendars.isNotEmpty()) {
+                                Text(
+                                    text = "Google",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                )
+                                googleCalendars.forEach { calendar ->
+                                    CalendarToggleRow(
+                                        calendar = calendar,
+                                        onVisibilityChange = { visible ->
+                                            onCalendarVisibilityChange(calendar.id, visible)
+                                        }
+                                    )
+                                }
                             }
-                        )
-                    }
-                }
 
-                // Default calendar picker
-                val writableCalendars = calendars.filter { it.isVisible && !it.isReadOnly }
-                if (writableCalendars.isNotEmpty()) {
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        DefaultCalendarPicker(
-                            calendars = writableCalendars,
-                            selectedCalendarId = defaultCalendarId,
-                            onCalendarSelected = onDefaultCalendarChange
-                        )
+                            // iCloud calendars
+                            val iCloudCalendars = calendars.filter { it.providerType == CalendarProvider.ICLOUD }
+                            if (iCloudCalendars.isNotEmpty()) {
+                                Text(
+                                    text = "iCloud",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                )
+                                iCloudCalendars.forEach { calendar ->
+                                    CalendarToggleRow(
+                                        calendar = calendar,
+                                        onVisibilityChange = { visible ->
+                                            onCalendarVisibilityChange(calendar.id, visible)
+                                        }
+                                    )
+                                }
+                            }
+
+                            // Default calendar picker
+                            val writableCalendars = calendars.filter { it.isVisible && !it.isReadOnly }
+                            if (writableCalendars.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DefaultCalendarPicker(
+                                    calendars = writableCalendars,
+                                    selectedCalendarId = defaultCalendarId,
+                                    onCalendarSelected = onDefaultCalendarChange
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -50,9 +50,11 @@ fun TaskList(
     showCompleted: Boolean = true,
     isCompact: Boolean = false,
     showAddButton: Boolean = true,
+    showWriteHint: Boolean = true,
     // Inline handwriting support
     recognizer: HandwritingRecognizer? = null,
     onTaskTextRecognized: ((String) -> Unit)? = null,
+    onHandwritingUsed: (() -> Unit)? = null,
     // Callbacks
     onTaskToggle: ((TaskUi) -> Unit)? = null,
     onTaskClick: ((TaskUi) -> Unit)? = null,
@@ -132,31 +134,33 @@ fun TaskList(
         ) {
             // Layer 1: Task list (receives finger taps)
             if (displayedTasks.isEmpty()) {
-                // Empty state hint
-                val isWallCalendar = LocalIsWallCalendar.current
-                val hintColor = if (isEInk) {
-                    androidx.compose.ui.graphics.Color(0xFFA0A0A0)
-                } else {
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (recognizer == null && onAddTask != null) {
-                                Modifier.clickable { onAddTask() }
-                            } else {
-                                Modifier
-                            }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Edit,
-                        contentDescription = "Add task",
-                        tint = hintColor,
-                        modifier = Modifier.size(if (isCompact) 14.dp else if (isWallCalendar) 20.dp else 16.dp)
-                    )
+                // Empty state hint - only shown if write hints haven't been dismissed
+                if (showWriteHint) {
+                    val isWallCalendar = LocalIsWallCalendar.current
+                    val hintColor = if (isEInk) {
+                        androidx.compose.ui.graphics.Color(0xFFA0A0A0)
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (recognizer == null && onAddTask != null) {
+                                    Modifier.clickable { onAddTask() }
+                                } else {
+                                    Modifier
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Add task",
+                            tint = hintColor,
+                            modifier = Modifier.size(if (isCompact) 14.dp else if (isWallCalendar) 20.dp else 16.dp)
+                        )
+                    }
                 }
             } else {
                 // All tasks in the same two-column grid (incomplete first, then completed)
@@ -185,6 +189,7 @@ fun TaskList(
                     modifier = Modifier.fillMaxSize(),
                     isCompact = isCompact,
                     onTaskTextRecognized = onTaskTextRecognized,
+                    onHandwritingUsed = onHandwritingUsed,
                     stylusOnly = true,
                     onFingerTap = if (displayedTasks.isEmpty()) onAddTask else null
                 )

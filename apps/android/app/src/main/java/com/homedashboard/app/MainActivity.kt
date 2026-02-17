@@ -1,6 +1,7 @@
 package com.homedashboard.app
 
 import android.os.Bundle
+import android.os.PowerManager
 import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -56,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var viewModel: CalendarViewModel
     private lateinit var handwritingRecognizer: HandwritingRecognizer
     private val naturalLanguageParser = NaturalLanguageParser()
+    private var wakeLock: PowerManager.WakeLock? = null
 
     // Google Calendar sync components
     private lateinit var tokenStorage: TokenStorage
@@ -97,11 +99,23 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             settingsRepository.settings.collect { settings ->
                 latestSettings = settings
-                // Always-on display toggle
+                // Always-on display toggle (window flag + wake lock for Boox compatibility)
                 if (settings.alwaysOnDisplay) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    if (wakeLock == null) {
+                        val pm = getSystemService(POWER_SERVICE) as PowerManager
+                        @Suppress("DEPRECATION")
+                        wakeLock = pm.newWakeLock(
+                            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                            "HomeDashboard:KeepScreenOn"
+                        ).apply { acquire() }
+                    }
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    wakeLock?.let {
+                        if (it.isHeld) it.release()
+                        wakeLock = null
+                    }
                 }
                 // Apply brightness immediately when settings change
                 applyNightDimming(settings)
@@ -209,6 +223,7 @@ class MainActivity : ComponentActivity() {
 
             // Collect weather data
             val weatherByDate by viewModel.weatherByDate.collectAsState()
+            val rainForecast by viewModel.rainForecast.collectAsState()
 
             // Track if settings screen should be shown
             var showSettings by remember { mutableStateOf(false) }
@@ -338,6 +353,7 @@ class MainActivity : ComponentActivity() {
                             eventsMap = eventsByDate,
                             tasks = tasks,
                             weatherByDate = weatherByDate,
+                            rainForecast = rainForecast,
                             // Inline handwriting - write directly in day cells
                             recognizer = handwritingRecognizer,
                             parser = naturalLanguageParser,
@@ -350,6 +366,9 @@ class MainActivity : ComponentActivity() {
                                     isAllDay = parsedEvent.isAllDay,
                                     location = parsedEvent.location
                                 )
+                            },
+                            onHandwritingUsed = {
+                                viewModel.markHandwritingUsed()
                             },
                             onSettingsClick = {
                                 showSettings = true
@@ -397,7 +416,7 @@ class MainActivity : ComponentActivity() {
                                 viewModel.addTask(title = text)
                             },
                             onResetData = if (BuildConfig.DEBUG) {
-                                { viewModel.resetAllData() }
+                                { viewModel.resetLocalData() }
                             } else null
                         )
                     }
@@ -555,5 +574,13 @@ class MainActivity : ComponentActivity() {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+            wakeLock = null
+        }
     }
 }

@@ -54,17 +54,25 @@ class ICloudSyncProvider(
 
             // Step 1: Discover calendars
             onProgress(0.1f, "Discovering calendars...")
-            val calendarHomeUrl = authManager.getPrincipalUrl()
-                ?.let { principalUrl ->
+            val principalUrl = authManager.getPrincipalUrl()
+            val serverUrl = tokenStorage.getICloudServerUrl()
+            Log.d(TAG, "iCloud sync starting: principalUrl=$principalUrl, serverUrl=$serverUrl")
+
+            val calendarHomeUrl = principalUrl
+                ?.let { url ->
                     // For iCloud, calendar home is typically /[principal]/calendars/
-                    principalUrl.replace("/principal/", "/calendars/")
+                    url.replace("/principal/", "/calendars/")
                 }
-                ?: tokenStorage.getICloudServerUrl()?.let { "$it/calendars/" }
+                ?: serverUrl?.let { "$it/calendars/" }
                 ?: return@withContext Result.failure(CalDavException("No calendar home URL"))
+
+            Log.d(TAG, "Calendar home URL: $calendarHomeUrl")
 
             val calendarsResult = calDavService.listCalendars(calendarHomeUrl)
             if (calendarsResult.isFailure) {
-                return@withContext Result.failure(calendarsResult.exceptionOrNull()!!)
+                val error = calendarsResult.exceptionOrNull()!!
+                Log.e(TAG, "Failed to list calendars from $calendarHomeUrl", error)
+                return@withContext Result.failure(error)
             }
 
             val calendars = calendarsResult.getOrThrow()
@@ -213,6 +221,9 @@ class ICloudSyncProvider(
         var deleted = 0
         val errors = mutableListOf<SyncError>()
 
+        // Resolve relative hrefs to full URLs
+        val calendarUrl = resolveCalendarUrl(calendar.href)
+
         // Try incremental sync first
         val syncToken = if (!forceFullSync) {
             tokenStorage.getCalDavSyncToken(calendar.href)
@@ -220,13 +231,13 @@ class ICloudSyncProvider(
 
         val syncResult = if (syncToken != null) {
             // Incremental sync
-            calDavService.syncEvents(calendar.href, syncToken)
+            calDavService.syncEvents(calendarUrl, syncToken)
         } else {
             // Full sync with time range
             val startTime = Instant.now().minus(30, ChronoUnit.DAYS)
             val endTime = Instant.now().plus(90, ChronoUnit.DAYS)
 
-            val eventsResult = calDavService.getEventsInRange(calendar.href, startTime, endTime)
+            val eventsResult = calDavService.getEventsInRange(calendarUrl, startTime, endTime)
             eventsResult.map { events ->
                 SyncCollectionResponse(
                     events = events,
@@ -330,11 +341,11 @@ class ICloudSyncProvider(
                 val icalData = eventMapper.toICalendar(event)
                 val filename = eventMapper.generateEventFilename(event)
 
-                // Find the calendar URL
-                val calendarUrl = event.calendarId.ifEmpty {
-                    // Use first available calendar as default
+                // Find the calendar URL (resolve relative hrefs)
+                val calendarHref = event.calendarId.ifEmpty {
                     calendars.firstOrNull()?.href
                 } ?: continue
+                val calendarUrl = resolveCalendarUrl(calendarHref)
 
                 val result = if (event.remoteId == null) {
                     // New event - create
@@ -401,7 +412,7 @@ class ICloudSyncProvider(
 
         for (event in deletedEvents) {
             try {
-                val calendarUrl = event.calendarId
+                val calendarUrl = resolveCalendarUrl(event.calendarId)
                 val filename = eventMapper.generateEventFilename(event)
                 val eventUrl = buildEventUrl(calendarUrl, filename)
 
@@ -441,6 +452,17 @@ class ICloudSyncProvider(
     }
 
     // ==================== Helpers ====================
+
+    /**
+     * Resolve a potentially relative CalDAV href to a full URL.
+     * iCloud PROPFIND responses return relative hrefs like "/1234/calendars/uuid/"
+     * which need the server host prepended.
+     */
+    private suspend fun resolveCalendarUrl(href: String): String {
+        if (href.startsWith("http")) return href
+        val serverUrl = tokenStorage.getICloudServerUrl() ?: "https://caldav.icloud.com"
+        return "$serverUrl$href"
+    }
 
     private fun buildEventUrl(calendarUrl: String, filename: String): String {
         val baseUrl = if (calendarUrl.endsWith("/")) calendarUrl else "$calendarUrl/"

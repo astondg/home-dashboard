@@ -4,24 +4,17 @@ import android.util.Log
 import com.homedashboard.app.data.model.CalendarEvent
 import com.homedashboard.app.data.model.CalendarProvider
 import net.fortuna.ical4j.data.CalendarBuilder
-import net.fortuna.ical4j.model.Component
-import net.fortuna.ical4j.model.Property
 import net.fortuna.ical4j.model.component.VEvent
-import net.fortuna.ical4j.model.parameter.Value
-import net.fortuna.ical4j.model.property.*
 import java.io.StringReader
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.Temporal
 import java.util.UUID
 
 /**
  * Mapper for converting between iCalendar format and CalendarEvent model.
- * Uses ical4j library for parsing and generating iCalendar data.
- * Compatible with ical4j 4.x API.
+ * Uses ical4j 3.x for robust RFC 5545 parsing.
  */
 class CalDavEventMapper {
 
@@ -30,7 +23,7 @@ class CalDavEventMapper {
     // ==================== Parsing (iCalendar -> CalendarEvent) ====================
 
     /**
-     * Parse iCalendar data to extract VEvent(s).
+     * Parse iCalendar data to extract VEvent(s) using ical4j 3.x.
      * @param icalData Raw iCalendar string
      * @return List of parsed CalDavEvent objects
      */
@@ -39,10 +32,10 @@ class CalDavEventMapper {
             val calendar = calendarBuilder.build(StringReader(icalData))
             val events = mutableListOf<CalDavEvent>()
 
-            // ical4j 4.x: Use getComponents() with component type
-            val vEvents = calendar.getComponents<VEvent>(Component.VEVENT)
-            for (vEvent in vEvents) {
-                parseVEvent(vEvent)?.let { events.add(it) }
+            for (component in calendar.components) {
+                if (component is VEvent) {
+                    convertVEvent(component)?.let { events.add(it) }
+                }
             }
 
             events
@@ -53,94 +46,50 @@ class CalDavEventMapper {
     }
 
     /**
-     * Parse a single VEvent component.
+     * Convert an ical4j VEvent to our CalDavEvent model.
      */
-    private fun parseVEvent(vEvent: VEvent): CalDavEvent? {
+    private fun convertVEvent(vevent: VEvent): CalDavEvent? {
         try {
-            // UID is required - ical4j 4.x uses Optional-based getters
-            val uid = vEvent.getProperty<Uid>(Property.UID)
-                .map { it.value }
-                .orElse(null) ?: return null
+            val uid = vevent.uid?.value ?: return null
+            val summary = vevent.summary?.value ?: "Untitled Event"
 
-            // SUMMARY (title)
-            val summary = vEvent.getProperty<Summary>(Property.SUMMARY)
-                .map { it.value }
-                .orElse("Untitled Event")
+            // Detect all-day: DtStart with Date (not DateTime) means all-day
+            val dtStartProp = vevent.startDate ?: return null
+            val isAllDay = dtStartProp.date !is net.fortuna.ical4j.model.DateTime
 
-            // DTSTART is required - ical4j 4.x uses getDateTimeStart()
-            val dtStartProp = vEvent.getDateTimeStart<Temporal>().orElse(null) ?: return null
-            val dtStartValue = dtStartProp.date
+            val startDateTime = convertToZonedDateTime(dtStartProp.date, isAllDay)
+                ?: return null
 
-            // Check if all-day by looking at the parameter or if it's a LocalDate
-            val valueParam = dtStartProp.getParameter<Value>("VALUE")
-            val isAllDay = dtStartValue is LocalDate ||
-                (valueParam != null && valueParam == Value.DATE)
-
-            // Parse start time
-            val startDateTime = parseTemporalToZonedDateTime(dtStartValue, isAllDay)
-
-            // Parse end time (or calculate from duration/use start)
-            val dtEndProp = vEvent.getDateTimeEnd<Temporal>().orElse(null)
+            // Parse DTEND
+            val dtEndProp = vevent.endDate
             val endDateTime = if (dtEndProp != null) {
-                parseTemporalToZonedDateTime(dtEndProp.date, isAllDay)
+                convertToZonedDateTime(dtEndProp.date, isAllDay)
             } else {
-                // Try duration
-                val durationProp = vEvent.getProperty<Duration>(Property.DURATION).orElse(null)
-                if (durationProp != null) {
-                    startDateTime.plus(durationProp.duration)
-                } else {
-                    // Default: 1 day for all-day, 1 hour otherwise
-                    if (isAllDay) startDateTime.plusDays(1) else startDateTime.plusHours(1)
-                }
-            }
+                // Fallback: all-day gets +1 day, timed gets +1 hour
+                if (isAllDay) startDateTime.plusDays(1) else startDateTime.plusHours(1)
+            } ?: (if (isAllDay) startDateTime.plusDays(1) else startDateTime.plusHours(1))
 
             // DTSTAMP
-            val dtStamp = vEvent.getProperty<DtStamp>(Property.DTSTAMP)
-                .map { parseTemporalToZonedDateTime(it.date, false) }
-                .orElse(ZonedDateTime.now())
+            val dtStamp = vevent.dateStamp?.date?.let { convertToZonedDateTime(it, false) }
+                ?: ZonedDateTime.now()
 
             // LAST-MODIFIED
-            val lastModified = vEvent.getProperty<LastModified>(Property.LAST_MODIFIED)
-                .map { parseTemporalToZonedDateTime(it.date, false) }
-                .orElse(null)
+            val lastModified = vevent.lastModified?.dateTime?.let { convertToZonedDateTime(it, false) }
 
             // Optional properties
-            val description = vEvent.getProperty<Description>(Property.DESCRIPTION)
-                .map { it.value }
-                .orElse(null)
-
-            val location = vEvent.getProperty<Location>(Property.LOCATION)
-                .map { it.value }
-                .orElse(null)
-
-            val rrule = vEvent.getProperty<RRule<Temporal>>(Property.RRULE)
-                .map { it.value }
-                .orElse(null)
-
-            val status = vEvent.getProperty<Status>(Property.STATUS)
-                .map { EventStatus.fromString(it.value) }
-                .orElse(EventStatus.CONFIRMED)
-
-            val sequence = vEvent.getProperty<Sequence>(Property.SEQUENCE)
-                .map { it.sequenceNo }
-                .orElse(0)
-
-            val transp = vEvent.getProperty<Transp>(Property.TRANSP)
-                .map { Transparency.fromString(it.value) }
-                .orElse(Transparency.OPAQUE)
-
-            val url = vEvent.getProperty<Url>(Property.URL)
-                .map { it.uri?.toString() }
-                .orElse(null)
-
-            // Categories - cast to List to avoid iterator ambiguity
-            val categoriesProp = vEvent.getProperty<Categories>(Property.CATEGORIES).orElse(null)
-            val categories: List<String> = if (categoriesProp != null) {
-                val textList = categoriesProp.categories as List<*>
-                textList.map { it.toString() }
-            } else {
-                emptyList()
-            }
+            val description = vevent.description?.value
+            val location = vevent.location?.value
+            val rrule = vevent.getProperty<net.fortuna.ical4j.model.property.RRule>("RRULE")?.value
+            val status = EventStatus.fromString(
+                vevent.status?.value
+            )
+            val sequence = vevent.sequence?.sequenceNo ?: 0
+            val transp = Transparency.fromString(
+                vevent.transparency?.value
+            )
+            val url = vevent.url?.value?.toString()
+            val categories = vevent.getProperty<net.fortuna.ical4j.model.property.Categories>("CATEGORIES")
+                ?.categories?.toList() ?: emptyList()
 
             return CalDavEvent(
                 uid = uid,
@@ -160,28 +109,38 @@ class CalDavEventMapper {
                 categories = categories
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse VEvent", e)
+            Log.e(TAG, "Failed to convert VEvent", e)
             return null
         }
     }
 
     /**
-     * Parse a Temporal (LocalDate, LocalDateTime, ZonedDateTime, Instant) to ZonedDateTime.
+     * Convert ical4j Date/DateTime to java.time.ZonedDateTime.
+     * ical4j 3.x uses net.fortuna.ical4j.model.Date and DateTime (extends Date).
      */
-    private fun parseTemporalToZonedDateTime(temporal: Temporal, isAllDay: Boolean): ZonedDateTime {
-        return when (temporal) {
-            is ZonedDateTime -> temporal
-            is java.time.LocalDateTime -> temporal.atZone(ZoneId.systemDefault())
-            is LocalDate -> temporal.atStartOfDay(ZoneId.systemDefault())
-            is Instant -> temporal.atZone(ZoneId.of("UTC"))
-            else -> {
-                // Fallback: try to convert via toString parsing
-                try {
-                    ZonedDateTime.parse(temporal.toString())
-                } catch (e: Exception) {
-                    ZonedDateTime.now()
+    private fun convertToZonedDateTime(
+        date: net.fortuna.ical4j.model.Date,
+        isAllDay: Boolean
+    ): ZonedDateTime? {
+        return try {
+            if (isAllDay) {
+                // All-day: date-only value, convert via epoch millis to LocalDate
+                val instant = Instant.ofEpochMilli(date.time)
+                val localDate = instant.atZone(ZoneId.of("UTC")).toLocalDate()
+                localDate.atStartOfDay(ZoneId.systemDefault())
+            } else {
+                // DateTime with time component
+                val instant = Instant.ofEpochMilli(date.time)
+                if (date is net.fortuna.ical4j.model.DateTime && date.timeZone != null) {
+                    instant.atZone(ZoneId.of(date.timeZone.id))
+                } else {
+                    // UTC or floating time
+                    instant.atZone(ZoneId.of("UTC"))
                 }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to convert date: $date", e)
+            null
         }
     }
 
@@ -218,7 +177,6 @@ class CalDavEventMapper {
 
     /**
      * Map CalDavEventResource to CalendarEvent.
-     * Parses the iCalendar data and maps to local model.
      */
     fun resourceToLocalEvent(
         resource: CalDavEventResource,
@@ -294,7 +252,6 @@ class CalDavEventMapper {
 
     /**
      * Format ZonedDateTime as iCalendar DATE-TIME (UTC).
-     * Format: 20260129T143000Z
      */
     private fun formatDateTime(dateTime: ZonedDateTime): String {
         val utc = dateTime.withZoneSameInstant(ZoneId.of("UTC"))
@@ -303,7 +260,6 @@ class CalDavEventMapper {
 
     /**
      * Format ZonedDateTime as iCalendar DATE (for all-day events).
-     * Format: 20260129
      */
     private fun formatDate(dateTime: ZonedDateTime): String {
         return dateTime.format(DATE_FORMATTER)
@@ -325,7 +281,6 @@ class CalDavEventMapper {
 
     /**
      * Check if the remote event is newer than the local event.
-     * Used for conflict resolution.
      */
     fun isRemoteNewer(localEvent: CalendarEvent, remoteEvent: CalDavEvent): Boolean {
         val localUpdated = localEvent.updatedAt
@@ -336,7 +291,6 @@ class CalDavEventMapper {
 
     /**
      * Merge remote changes into local event.
-     * Preserves local ID while updating other fields.
      */
     fun mergeRemoteChanges(
         localEvent: CalendarEvent,
@@ -388,7 +342,7 @@ class CalDavEventMapper {
     companion object {
         private const val TAG = "CalDavEventMapper"
 
-        // iCalendar date formatters
+        // iCalendar date formatters (used for generation only)
         private val DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd")
     }

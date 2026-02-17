@@ -1,7 +1,9 @@
 package com.homedashboard.app.handwriting
 
+import android.annotation.SuppressLint
 import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -11,27 +13,39 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.ink.authoring.InProgressStrokeId
+import androidx.ink.authoring.InProgressStrokesFinishedListener
+import androidx.ink.authoring.InProgressStrokesView
+import androidx.ink.brush.Brush
+import androidx.ink.brush.StockBrushes
+import androidx.ink.rendering.android.canvas.CanvasStrokeRenderer
+import androidx.ink.strokes.Stroke as InkStroke
 import androidx.input.motionprediction.MotionEventPredictor
+import com.homedashboard.app.settings.DisplayDetection
 
 /**
- * Adaptive writing area that uses the Boox SDK for low-latency pen input
- * on Boox devices, and falls back to Compose Canvas on other devices.
+ * Adaptive writing area that selects the best rendering backend:
  *
- * On Boox devices with a [BooxPenRouter] available (via [LocalBooxPenRouter]),
- * this composable registers itself as a writing zone rather than creating its
- * own SurfaceView. The single [BooxDrawingSurface] overlay routes pen events
- * to the correct zone. Completed strokes are rendered on a lightweight
- * Compose Canvas.
+ * - **Standard Android devices:** Uses [InkApiWritingArea] with `InProgressStrokesView` for
+ *   front-buffer OpenGL rendering (~4ms latency vs ~40-60ms with Compose Canvas).
+ * - **Boox e-ink devices:** Uses [ComposeCanvasWritingArea] (Compose Canvas path), since
+ *   front-buffer GL rendering doesn't benefit e-ink displays.
  *
- * @param strokes The list of completed strokes to render
- * @param currentStroke The stroke currently being drawn (Compose Canvas backend only; Boox SDK renders live strokes)
- * @param zoneId Unique identifier for this writing zone (used for Boox routing)
+ * Both backends feed the same [DrawingEventListener] for ML Kit recognition. Callers
+ * see no difference — the public API is identical.
+ *
+ * @param strokes The list of completed strokes (used for UI logic like `hasStrokes` checks)
+ * @param currentStroke The stroke currently being drawn (Compose Canvas backend only)
+ * @param zoneId Unique identifier for this writing zone
  * @param config Drawing configuration (stroke color, width, stylus-only mode)
- * @param listener Callback for drawing events (feeds InkBuilder)
+ * @param listener Callback for drawing events (feeds InkBuilder for ML Kit)
  * @param onSizeChanged Called when the canvas size changes
  * @param onFingerTap Called when a finger tap is detected in stylus-only mode
  */
@@ -46,18 +60,191 @@ fun AdaptiveWritingArea(
     onSizeChanged: ((IntSize) -> Unit)? = null,
     onFingerTap: (() -> Unit)? = null
 ) {
-    // Use Compose Canvas for pen input on all devices.
-    // Standard Android stylus input works reliably across Boox, Samsung, and other devices.
-    // TODO: Add Boox EpdController fast refresh mode for low-latency e-ink rendering.
-    ComposeCanvasWritingArea(
-        strokes = strokes,
-        currentStroke = currentStroke,
-        modifier = modifier,
-        config = config,
-        listener = listener,
-        onSizeChanged = onSizeChanged,
-        onFingerTap = onFingerTap
-    )
+    if (DisplayDetection.isBooxDevice()) {
+        // Boox e-ink: Compose Canvas (front-buffer GL doesn't help e-ink refresh)
+        ComposeCanvasWritingArea(
+            strokes = strokes,
+            currentStroke = currentStroke,
+            modifier = modifier,
+            config = config,
+            listener = listener,
+            onSizeChanged = onSizeChanged,
+            onFingerTap = onFingerTap
+        )
+    } else {
+        // Standard Android: Low-latency front-buffer rendering via androidx.ink
+        InkApiWritingArea(
+            strokes = strokes,
+            currentStroke = currentStroke,
+            modifier = modifier,
+            config = config,
+            listener = listener,
+            onSizeChanged = onSizeChanged,
+            onFingerTap = onFingerTap
+        )
+    }
+}
+
+/**
+ * Low-latency writing area using `androidx.ink` (`InProgressStrokesView`).
+ *
+ * Rendering architecture:
+ * - **Wet ink** (in-progress strokes): `InProgressStrokesView` renders via front-buffer OpenGL
+ *   (~4ms latency, bypasses double-buffering and vsync).
+ * - **Dry ink** (finished strokes): `CanvasStrokeRenderer` draws on a Compose Canvas underneath.
+ *
+ * Touch events are intercepted via `OnTouchListener` on the `InProgressStrokesView`, filtered
+ * for stylus (when `config.stylusOnly`), and forwarded to both:
+ * 1. `InProgressStrokesView` (for rendering)
+ * 2. `DrawingEventListener` (for ML Kit recognition via callers' InkBuilder)
+ *
+ * The caller's `strokes` list is monitored for size decreases (indicating a clear operation),
+ * which triggers clearing the internal dry stroke set.
+ */
+@SuppressLint("ClickableViewAccessibility")
+@Composable
+internal fun InkApiWritingArea(
+    strokes: List<StrokeData>,
+    @Suppress("UNUSED_PARAMETER") currentStroke: StrokeData?,
+    modifier: Modifier = Modifier,
+    config: DrawingConfig = DrawingConfig(),
+    listener: DrawingEventListener? = null,
+    onSizeChanged: ((IntSize) -> Unit)? = null,
+    onFingerTap: (() -> Unit)? = null
+) {
+    // Keep references to composable params that the touch listener reads.
+    // rememberUpdatedState ensures the lambda always reads the latest values
+    // even though it was created once in the AndroidView factory.
+    val listenerState = rememberUpdatedState(listener)
+    val onFingerTapState = rememberUpdatedState(onFingerTap)
+    val configState = rememberUpdatedState(config)
+
+    // Create ink Brush from DrawingConfig
+    val brush = remember(config.strokeColor, config.strokeWidth) {
+        Brush.createWithColorIntArgb(
+            family = StockBrushes.pressurePen(),
+            colorIntArgb = config.strokeColor.toArgb(),
+            size = config.strokeWidth,
+            epsilon = 0.1f
+        )
+    }
+    val brushState = rememberUpdatedState(brush)
+
+    // Internal set of finished strokes rendered as "dry" ink
+    val finishedStrokes = remember { mutableStateListOf<InkStroke>() }
+    val canvasStrokeRenderer = remember { CanvasStrokeRenderer.create() }
+    val identityMatrix = remember { android.graphics.Matrix() }
+
+    // Track caller's stroke count to detect clears
+    var lastStrokeCount by remember { mutableIntStateOf(0) }
+    if (strokes.size < lastStrokeCount) {
+        finishedStrokes.clear()
+    }
+    lastStrokeCount = strokes.size
+
+    // Current in-progress stroke ID (read/written from touch listener)
+    val currentStrokeIdRef = remember { mutableStateOf<InProgressStrokeId?>(null) }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .onSizeChanged { size -> onSizeChanged?.invoke(size) }
+    ) {
+        // Layer 1 (bottom): Dry strokes rendered on Compose Canvas
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val nativeCanvas = drawContext.canvas.nativeCanvas
+            finishedStrokes.forEach { stroke ->
+                canvasStrokeRenderer.draw(nativeCanvas, stroke, identityMatrix)
+            }
+        }
+
+        // Layer 2 (top): InProgressStrokesView — wet ink rendering + touch handling
+        AndroidView(
+            factory = { context ->
+                InProgressStrokesView(context).apply {
+                    val predictor = MotionEventPredictor.newInstance(this)
+
+                    addFinishedStrokesListener(object : InProgressStrokesFinishedListener {
+                        override fun onStrokesFinished(strokes: Map<InProgressStrokeId, InkStroke>) {
+                            finishedStrokes.addAll(strokes.values)
+                            removeFinishedStrokes(strokes.keys)
+                        }
+                    })
+
+                    setOnTouchListener { v, event ->
+                        val cfg = configState.value
+                        val isStylus = event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS ||
+                            event.getToolType(0) == MotionEvent.TOOL_TYPE_ERASER
+
+                        if (cfg.stylusOnly && !isStylus) {
+                            if (event.action == MotionEvent.ACTION_UP) {
+                                onFingerTapState.value?.invoke()
+                            }
+                            return@setOnTouchListener false
+                        }
+
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                v.requestUnbufferedDispatch(event)
+                                predictor.record(event)
+                                val pointerId = event.getPointerId(event.actionIndex)
+                                currentStrokeIdRef.value = startStroke(
+                                    event, pointerId, brushState.value,
+                                    identityMatrix, identityMatrix
+                                )
+                                listenerState.value?.onStrokeStart(
+                                    event.x, event.y, event.eventTime
+                                )
+                                true
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                val id = currentStrokeIdRef.value
+                                    ?: return@setOnTouchListener false
+                                predictor.record(event)
+                                val predicted = predictor.predict()
+                                try {
+                                    addToStroke(event, event.getPointerId(0), id, predicted)
+                                } finally {
+                                    predicted?.recycle()
+                                }
+
+                                // Forward all points to listener for ML Kit recognition
+                                val lsnr = listenerState.value
+                                for (i in 0 until event.historySize) {
+                                    lsnr?.onStrokeMove(
+                                        event.getHistoricalX(i),
+                                        event.getHistoricalY(i),
+                                        event.getHistoricalEventTime(i)
+                                    )
+                                }
+                                lsnr?.onStrokeMove(event.x, event.y, event.eventTime)
+                                true
+                            }
+                            MotionEvent.ACTION_UP -> {
+                                val id = currentStrokeIdRef.value
+                                    ?: return@setOnTouchListener false
+                                val pointerId = event.getPointerId(event.actionIndex)
+                                finishStroke(event, pointerId, id)
+                                currentStrokeIdRef.value = null
+                                listenerState.value?.onStrokeEnd()
+                                true
+                            }
+                            MotionEvent.ACTION_CANCEL -> {
+                                val id = currentStrokeIdRef.value
+                                    ?: return@setOnTouchListener false
+                                cancelStroke(id, event)
+                                currentStrokeIdRef.value = null
+                                listenerState.value?.onStrokeEnd()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
 }
 
 /**

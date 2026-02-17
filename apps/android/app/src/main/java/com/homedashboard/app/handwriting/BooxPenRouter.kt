@@ -3,7 +3,6 @@ package com.homedashboard.app.handwriting
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import com.onyx.android.sdk.pen.TouchHelper
 
 /**
@@ -17,7 +16,6 @@ import com.onyx.android.sdk.pen.TouchHelper
 class BooxPenRouter {
 
     companion object {
-        private const val TAG = "BooxPenRouter"
         private const val LIMIT_RECT_UPDATE_DELAY_MS = 100L
     }
 
@@ -71,23 +69,15 @@ class BooxPenRouter {
      * and forwards the event with coordinates translated to the zone's local space.
      */
     fun onPenDown(x: Float, y: Float, timestamp: Long) {
-        if (activeZone != null) {
-            Log.d(TAG, "onPenDown: already tracking zone ${activeZone?.id}, ignoring")
-            return
-        }
+        if (activeZone != null) return
 
         val ix = x.toInt()
         val iy = y.toInt()
-        val zone = zones.values.firstOrNull { it.bounds.contains(ix, iy) }
-        if (zone == null) {
-            Log.d(TAG, "onPenDown: no zone hit at ($ix, $iy), ${zones.size} zones registered: ${zones.values.joinToString { "${it.id}=${it.bounds}" }}")
-            return
-        }
+        val zone = zones.values.firstOrNull { it.bounds.contains(ix, iy) } ?: return
 
         activeZone = zone
         val localX = x - zone.bounds.left
         val localY = y - zone.bounds.top
-        Log.d(TAG, "Pen down in zone ${zone.id} local=($localX,$localY)")
         zone.listener.onStrokeStart(localX, localY, timestamp)
     }
 
@@ -106,7 +96,6 @@ class BooxPenRouter {
      */
     fun onPenUp() {
         val zone = activeZone ?: return
-        Log.d(TAG, "Pen up in zone ${zone.id}")
         zone.listener.onStrokeEnd()
         activeZone = null
     }
@@ -118,10 +107,7 @@ class BooxPenRouter {
      */
     private fun applyLimitRects() {
         val helper = touchHelper ?: return
-        if (zones.isEmpty()) {
-            Log.d(TAG, "No zones registered, skipping limit rect update")
-            return
-        }
+        if (zones.isEmpty()) return
 
         // Compute the union bounding box of all zones
         val union = Rect()
@@ -129,7 +115,6 @@ class BooxPenRouter {
             union.union(zone.bounds)
         }
 
-        Log.d(TAG, "Setting limit rect to $union (${zones.size} zones)")
         // SDK expects: setLimitRect(singleRect, excludeList)
         helper.setLimitRect(union, ArrayList())
     }

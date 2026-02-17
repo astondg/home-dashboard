@@ -4,7 +4,6 @@ import android.app.Activity
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -18,8 +17,6 @@ import com.onyx.android.sdk.data.note.TouchPoint
 import com.onyx.android.sdk.pen.RawInputCallback
 import com.onyx.android.sdk.pen.TouchHelper
 import com.onyx.android.sdk.pen.data.TouchPointList
-
-private const val TAG = "BooxDrawingSurface"
 
 /**
  * Single full-screen Boox drawing surface that routes pen events through [BooxPenRouter].
@@ -43,15 +40,10 @@ fun BooxDrawingSurface(
     val context = LocalContext.current
     val activity = context as? Activity
 
-    if (activity == null) {
-        Log.e(TAG, "BooxDrawingSurface: context is not an Activity, cannot create surface")
-        return
-    }
+    if (activity == null) return
 
     DisposableEffect(Unit) {
         val mainHandler = Handler(Looper.getMainLooper())
-
-        Log.d(TAG, "Creating SurfaceView and adding to Activity window")
 
         val surfaceView = SurfaceView(activity).apply {
             setZOrderOnTop(true)
@@ -60,14 +52,12 @@ fun BooxDrawingSurface(
 
         val rawInputCallback = object : RawInputCallback() {
             override fun onBeginRawDrawing(p0: Boolean, p1: TouchPoint) {
-                Log.d(TAG, "onBeginRawDrawing (${p1.x}, ${p1.y}) timestamp=${p1.timestamp}")
                 mainHandler.post {
                     router.onPenDown(p1.x, p1.y, p1.timestamp)
                 }
             }
 
             override fun onEndRawDrawing(p0: Boolean, p1: TouchPoint) {
-                Log.d(TAG, "onEndRawDrawing")
                 mainHandler.post {
                     router.onPenUp()
                 }
@@ -96,7 +86,6 @@ fun BooxDrawingSurface(
 
         // Step 1: Create TouchHelper
         val touchHelper = TouchHelper.create(surfaceView, rawInputCallback)
-        Log.d(TAG, "TouchHelper created: $touchHelper")
 
         touchHelper.setStrokeWidth(config.strokeWidth)
         touchHelper.setStrokeColor(config.strokeColor.toArgb())
@@ -110,14 +99,10 @@ fun BooxDrawingSurface(
                 v: View, left: Int, top: Int, right: Int, bottom: Int,
                 oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
             ) {
-                if (v.width == 0 || v.height == 0) {
-                    Log.d(TAG, "onLayoutChange: view has zero dimensions, waiting...")
-                    return
-                }
+                if (v.width == 0 || v.height == 0) return
 
                 val limit = Rect()
                 surfaceView.getLocalVisibleRect(limit)
-                Log.d(TAG, "onLayoutChange: view=${v.width}x${v.height}, limit=$limit, opening raw drawing")
 
                 // Official SDK order: setLimitRect -> openRawDrawing -> setRawDrawingEnabled
                 touchHelper.setStrokeWidth(config.strokeWidth)
@@ -127,24 +112,14 @@ fun BooxDrawingSurface(
                 touchHelper.setRawDrawingRenderEnabled(true)
                 touchHelper.setRawDrawingEnabled(true)
                 rawDrawingOpened = true
-
-                Log.d(TAG, "Raw drawing opened and enabled successfully")
             }
         })
 
         // Surface callbacks for cleanup only
         surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
-            override fun surfaceCreated(holder: SurfaceHolder) {
-                Log.d(TAG, "Surface created (raw drawing will open on layout change)")
-            }
-
-            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                Log.d(TAG, "Surface changed: ${width}x${height}")
-            }
-
-            override fun surfaceDestroyed(holder: SurfaceHolder) {
-                Log.d(TAG, "Surface destroyed")
-            }
+            override fun surfaceCreated(holder: SurfaceHolder) {}
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+            override fun surfaceDestroyed(holder: SurfaceHolder) {}
         })
 
         // Step 3: Add SurfaceView directly to the Activity's window
@@ -155,10 +130,7 @@ fun BooxDrawingSurface(
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
-        Log.d(TAG, "SurfaceView added to Activity window")
-
         onDispose {
-            Log.d(TAG, "Disposing BooxDrawingSurface")
             if (rawDrawingOpened) {
                 touchHelper.setRawDrawingEnabled(false)
                 touchHelper.closeRawDrawing()

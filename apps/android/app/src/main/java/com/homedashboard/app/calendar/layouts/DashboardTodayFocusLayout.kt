@@ -59,6 +59,8 @@ fun DashboardTodayFocusLayout(
     parser: NaturalLanguageParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
     onTaskTextRecognized: ((String) -> Unit)? = null,
+    onHandwritingUsed: (() -> Unit)? = null,
+    showWriteHints: Boolean = true,
     // Callbacks
     onAddEventClick: (LocalDate) -> Unit = {},
     onWriteClick: (LocalDate) -> Unit = {},
@@ -215,8 +217,10 @@ fun DashboardTodayFocusLayout(
                             isCompact = false,
                             showCompleted = false,
                             showAddButton = true,
+                            showWriteHint = showWriteHints,
                             recognizer = recognizer,
                             onTaskTextRecognized = onTaskTextRecognized,
+                            onHandwritingUsed = onHandwritingUsed,
                             onTaskToggle = onTaskToggle,
                             onTaskClick = onTaskClick,
                             onAddTask = onAddTaskClick

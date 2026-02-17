@@ -123,16 +123,14 @@ class HandwritingRecognizer(private val context: Context) {
         }
 
         return suspendCancellableCoroutine { continuation ->
-            val task = if (writingAreaWidth > 0f && writingAreaHeight > 0f) {
-                val writingArea = WritingArea(writingAreaWidth, writingAreaHeight)
-                val recognitionContext = MlKitRecognitionContext.builder()
-                    .setPreContext("")
-                    .setWritingArea(writingArea)
-                    .build()
-                currentRecognizer.recognize(ink, recognitionContext)
-            } else {
-                currentRecognizer.recognize(ink)
+            // ML Kit 18.1.0+ requires preContext on ALL recognize calls
+            val contextBuilder = MlKitRecognitionContext.builder()
+                .setPreContext("")
+            if (writingAreaWidth > 0f && writingAreaHeight > 0f) {
+                contextBuilder.setWritingArea(WritingArea(writingAreaWidth, writingAreaHeight))
             }
+            val recognitionContext = contextBuilder.build()
+            val task = currentRecognizer.recognize(ink, recognitionContext)
             task.addOnSuccessListener { mlResult ->
                     val candidates = mlResult.candidates.map { it.text }
                     if (candidates.isNotEmpty()) {

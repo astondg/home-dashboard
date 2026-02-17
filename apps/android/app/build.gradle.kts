@@ -51,14 +51,7 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            // ical4j library exclusions
-            excludes += "/META-INF/DEPENDENCIES"
-            excludes += "/META-INF/LICENSE"
-            excludes += "/META-INF/LICENSE.txt"
-            excludes += "/META-INF/license.txt"
-            excludes += "/META-INF/NOTICE"
-            excludes += "/META-INF/NOTICE.txt"
-            excludes += "/META-INF/notice.txt"
+            excludes += "/META-INF/groovy/**"
         }
         // Resolve duplicate native lib from Boox SDK and mmkv
         jniLibs {
@@ -103,6 +96,14 @@ dependencies {
     // Motion prediction for stylus latency reduction
     implementation("androidx.input:input-motionprediction:1.0.0-beta01")
 
+    // androidx.ink — Low-latency stylus rendering (front-buffer OpenGL)
+    val inkVersion = "1.0.0"
+    implementation("androidx.ink:ink-nativeloader:$inkVersion")
+    implementation("androidx.ink:ink-strokes:$inkVersion")
+    implementation("androidx.ink:ink-brush:$inkVersion")
+    implementation("androidx.ink:ink-authoring:$inkVersion")
+    implementation("androidx.ink:ink-rendering:$inkVersion")
+
     // Boox Onyx Pen SDK - low-latency stylus input on e-ink devices
     implementation("com.onyx.android.sdk:onyxsdk-pen:1.4.11") {
         exclude(group = "com.android.support")
@@ -135,8 +136,12 @@ dependencies {
     // Phase 5: Microsoft Calendar Integration (future)
     // implementation("com.microsoft.identity.client:msal:5.4.0")
 
-    // Phase 5: iCloud/CalDAV Integration
-    implementation("org.mnode.ical4j:ical4j:4.0.8")
+    // Phase 5: iCloud/CalDAV Integration — ical4j 3.x (Android-compatible, used by DAVx5)
+    implementation("org.mnode.ical4j:ical4j:3.0.29") {
+        exclude(group = "org.codehaus.groovy")
+        exclude(group = "org.apache.commons")
+        exclude(group = "org.slf4j")
+    }
 
     // Testing
     testImplementation("junit:junit:4.13.2")
