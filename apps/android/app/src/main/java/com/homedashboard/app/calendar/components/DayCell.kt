@@ -76,7 +76,8 @@ fun DayCell(
     onWriteClick: (() -> Unit)? = null,
     onHandwritingInput: ((String) -> Unit)? = null,
     onEventClick: ((CalendarEventUi) -> Unit)? = null,
-    onCellClick: (() -> Unit)? = null
+    onCellClick: (() -> Unit)? = null,
+    drawBorder: Boolean = true
 ) {
     val dims = LocalDimensions.current
     val isEInk = LocalIsEInk.current
@@ -101,14 +102,21 @@ fun DayCell(
 
     Column(
         modifier = modifier
-            .border(
-                width = borderWidth,
-                color = borderColor,
-                shape = MaterialTheme.shapes.small
-            )
-            .background(
-                color = backgroundColor,
-                shape = MaterialTheme.shapes.small
+            .then(
+                if (drawBorder) {
+                    Modifier
+                        .border(
+                            width = borderWidth,
+                            color = borderColor,
+                            shape = MaterialTheme.shapes.small
+                        )
+                        .background(
+                            color = backgroundColor,
+                            shape = MaterialTheme.shapes.small
+                        )
+                } else {
+                    Modifier.background(color = backgroundColor)
+                }
             )
             .clickable(enabled = onCellClick != null) { onCellClick?.invoke() }
     ) {
@@ -392,7 +400,7 @@ private fun DayCellHeader(
                         modifier = Modifier.size(if (isCompact) 22.dp else 28.dp),
                         tint = secondaryColor
                     )
-                    Spacer(modifier = Modifier.width(2.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = "${weather.maxTemp}\u00B0",
                         style = if (isCompact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall,
@@ -505,7 +513,7 @@ fun EventChip(
                             color = accentColor,
                             topLeft = androidx.compose.ui.geometry.Offset.Zero,
                             size = androidx.compose.ui.geometry.Size(
-                                width = if (isWallCalendar) 4.dp.toPx() else 3.dp.toPx(),
+                                width = if (isWallCalendar) 5.dp.toPx() else 3.dp.toPx(),
                                 height = size.height
                             )
                         )

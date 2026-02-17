@@ -105,6 +105,8 @@ class CalendarViewModel(
             .groupBy { it.startTime.toLocalDate() }
             .mapValues { (_, dayEvents) ->
                 dayEvents.map { event ->
+                    val startLocal = event.startTime.toLocalTime()
+                    val endLocal = event.endTime.toLocalTime()
                     CalendarEventUi(
                         id = event.id,
                         title = event.title,
@@ -112,7 +114,9 @@ class CalendarViewModel(
                         isAllDay = event.isAllDay,
                         color = colorMap[event.calendarId]?.let { it.toLong() and 0xFFFFFFFFL }
                             ?: getCalendarColor(event.calendarId),
-                        providerType = event.providerType
+                        providerType = event.providerType,
+                        startMinutes = if (event.isAllDay) null else startLocal.hour * 60 + startLocal.minute,
+                        endMinutes = if (event.isAllDay) null else endLocal.hour * 60 + endLocal.minute
                     )
                 }
             }

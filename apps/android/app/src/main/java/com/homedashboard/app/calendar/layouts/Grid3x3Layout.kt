@@ -2,9 +2,12 @@ package com.homedashboard.app.calendar.layouts
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import com.homedashboard.app.calendar.CalendarEventUi
 import com.homedashboard.app.calendar.components.*
@@ -53,133 +56,195 @@ fun Grid3x3Layout(
 ) {
     val dims = LocalDimensions.current
     val today = LocalDate.now()
+    val gridShape = RoundedCornerShape(8.dp)
+    val dividerColor = MaterialTheme.colorScheme.outlineVariant
 
-    Column(
+    Surface(
         modifier = modifier
             .fillMaxSize()
-            .padding(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            .padding(4.dp)
+            .border(
+                width = dims.cellBorderWidth,
+                color = dividerColor,
+                shape = gridShape
+            ),
+        shape = gridShape,
+        color = MaterialTheme.colorScheme.surface
     ) {
-        // Row 1: Days 1-3 (Today, Tomorrow, Day 3)
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        Column(
+            modifier = Modifier.fillMaxSize()
         ) {
-            days.take(3).forEach { date ->
-                DayCell(
-                    date = date,
-                    events = eventsMap[date] ?: emptyList(),
-                    isToday = date == today,
-                    isCompact = false,
-                    showDayName = true,
-                    headerLayout = DayHeaderLayout.HORIZONTAL,
-                    showAddButton = true,
-                    weather = weatherByDate[date],
-                    modifier = Modifier.weight(1f),
-                    recognizer = recognizer,
-                    parser = parser,
-                    onInlineEventCreated = onInlineEventCreated,
-                    onAddClick = { onAddEventClick(date) },
-                    onWriteClick = { onWriteClick(date) },
-                    onHandwritingInput = { text -> onHandwritingInput(date, text) },
-                    onEventClick = onEventClick,
-                    onHandwritingUsed = onHandwritingUsed,
-                    showWriteHint = showWriteHints
-                )
-            }
-        }
-
-        // Row 2: Days 4-6
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            days.drop(3).take(3).forEach { date ->
-                DayCell(
-                    date = date,
-                    events = eventsMap[date] ?: emptyList(),
-                    isToday = date == today,
-                    isCompact = false,
-                    showDayName = true,
-                    headerLayout = DayHeaderLayout.HORIZONTAL,
-                    showAddButton = true,
-                    weather = weatherByDate[date],
-                    modifier = Modifier.weight(1f),
-                    recognizer = recognizer,
-                    parser = parser,
-                    onInlineEventCreated = onInlineEventCreated,
-                    onAddClick = { onAddEventClick(date) },
-                    onWriteClick = { onWriteClick(date) },
-                    onHandwritingInput = { text -> onHandwritingInput(date, text) },
-                    onEventClick = onEventClick,
-                    onHandwritingUsed = onHandwritingUsed,
-                    showWriteHint = showWriteHints
-                )
-            }
-        }
-
-        // Row 3: Day 7 (1 column) + Tasks (2 columns)
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            // Day 7
-            if (days.size >= 7) {
-                DayCell(
-                    date = days[6],
-                    events = eventsMap[days[6]] ?: emptyList(),
-                    isToday = days[6] == today,
-                    isCompact = false,
-                    showDayName = true,
-                    headerLayout = DayHeaderLayout.HORIZONTAL,
-                    showAddButton = true,
-                    weather = weatherByDate[days[6]],
-                    modifier = Modifier.weight(1f),
-                    recognizer = recognizer,
-                    parser = parser,
-                    onInlineEventCreated = onInlineEventCreated,
-                    onAddClick = { onAddEventClick(days[6]) },
-                    onWriteClick = { onWriteClick(days[6]) },
-                    onHandwritingInput = { text -> onHandwritingInput(days[6], text) },
-                    onEventClick = onEventClick,
-                    onHandwritingUsed = onHandwritingUsed,
-                    showWriteHint = showWriteHints
-                )
-            }
-
-            // Tasks - spans 2 columns
-            Surface(
+            // Row 1: Days 1-3 (Today, Tomorrow, Day 3)
+            Row(
                 modifier = Modifier
-                    .weight(2f)  // 2 columns wide
-                    .fillMaxHeight()
-                    .border(
-                        width = dims.cellBorderWidth,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        shape = MaterialTheme.shapes.small
-                    ),
-                color = MaterialTheme.colorScheme.surface,
-                shape = MaterialTheme.shapes.small
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .drawBehind {
+                        val thirdWidth = size.width / 3f
+                        val strokeWidth = dims.cellBorderWidth.toPx()
+                        // Vertical divider at 1/3
+                        drawLine(
+                            color = dividerColor,
+                            start = Offset(thirdWidth, 0f),
+                            end = Offset(thirdWidth, size.height),
+                            strokeWidth = strokeWidth
+                        )
+                        // Vertical divider at 2/3
+                        drawLine(
+                            color = dividerColor,
+                            start = Offset(thirdWidth * 2, 0f),
+                            end = Offset(thirdWidth * 2, size.height),
+                            strokeWidth = strokeWidth
+                        )
+                    }
             ) {
-                TaskList(
-                    tasks = tasks,
-                    title = "Tasks",
-                    isCompact = false,
-                    showCompleted = true,
-                    showAddButton = true,
-                    showWriteHint = showWriteHints,
-                    recognizer = recognizer,
-                    onTaskTextRecognized = onTaskTextRecognized,
-                    onHandwritingUsed = onHandwritingUsed,
-                    onTaskToggle = onTaskToggle,
-                    onTaskClick = onTaskClick,
-                    onAddTask = onAddTaskClick
-                )
+                days.take(3).forEach { date ->
+                    DayCell(
+                        date = date,
+                        events = eventsMap[date] ?: emptyList(),
+                        isToday = date == today,
+                        isCompact = false,
+                        showDayName = true,
+                        headerLayout = DayHeaderLayout.HORIZONTAL,
+                        showAddButton = true,
+                        weather = weatherByDate[date],
+                        modifier = Modifier.weight(1f),
+                        recognizer = recognizer,
+                        parser = parser,
+                        onInlineEventCreated = onInlineEventCreated,
+                        onAddClick = { onAddEventClick(date) },
+                        onWriteClick = { onWriteClick(date) },
+                        onHandwritingInput = { text -> onHandwritingInput(date, text) },
+                        onEventClick = onEventClick,
+                        onHandwritingUsed = onHandwritingUsed,
+                        showWriteHint = showWriteHints,
+                        drawBorder = false
+                    )
+                }
+            }
+
+            // Horizontal divider between rows 1 and 2
+            HorizontalDivider(
+                thickness = dims.cellBorderWidth,
+                color = dividerColor
+            )
+
+            // Row 2: Days 4-6
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .drawBehind {
+                        val thirdWidth = size.width / 3f
+                        val strokeWidth = dims.cellBorderWidth.toPx()
+                        drawLine(
+                            color = dividerColor,
+                            start = Offset(thirdWidth, 0f),
+                            end = Offset(thirdWidth, size.height),
+                            strokeWidth = strokeWidth
+                        )
+                        drawLine(
+                            color = dividerColor,
+                            start = Offset(thirdWidth * 2, 0f),
+                            end = Offset(thirdWidth * 2, size.height),
+                            strokeWidth = strokeWidth
+                        )
+                    }
+            ) {
+                days.drop(3).take(3).forEach { date ->
+                    DayCell(
+                        date = date,
+                        events = eventsMap[date] ?: emptyList(),
+                        isToday = date == today,
+                        isCompact = false,
+                        showDayName = true,
+                        headerLayout = DayHeaderLayout.HORIZONTAL,
+                        showAddButton = true,
+                        weather = weatherByDate[date],
+                        modifier = Modifier.weight(1f),
+                        recognizer = recognizer,
+                        parser = parser,
+                        onInlineEventCreated = onInlineEventCreated,
+                        onAddClick = { onAddEventClick(date) },
+                        onWriteClick = { onWriteClick(date) },
+                        onHandwritingInput = { text -> onHandwritingInput(date, text) },
+                        onEventClick = onEventClick,
+                        onHandwritingUsed = onHandwritingUsed,
+                        showWriteHint = showWriteHints,
+                        drawBorder = false
+                    )
+                }
+            }
+
+            // Horizontal divider between rows 2 and 3
+            HorizontalDivider(
+                thickness = dims.cellBorderWidth,
+                color = dividerColor
+            )
+
+            // Row 3: Day 7 (1 column) + Tasks (2 columns)
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .drawBehind {
+                        val thirdWidth = size.width / 3f
+                        val strokeWidth = dims.cellBorderWidth.toPx()
+                        // Only one vertical divider at 1/3 (between day cell and tasks)
+                        drawLine(
+                            color = dividerColor,
+                            start = Offset(thirdWidth, 0f),
+                            end = Offset(thirdWidth, size.height),
+                            strokeWidth = strokeWidth
+                        )
+                    }
+            ) {
+                // Day 7
+                if (days.size >= 7) {
+                    DayCell(
+                        date = days[6],
+                        events = eventsMap[days[6]] ?: emptyList(),
+                        isToday = days[6] == today,
+                        isCompact = false,
+                        showDayName = true,
+                        headerLayout = DayHeaderLayout.HORIZONTAL,
+                        showAddButton = true,
+                        weather = weatherByDate[days[6]],
+                        modifier = Modifier.weight(1f),
+                        recognizer = recognizer,
+                        parser = parser,
+                        onInlineEventCreated = onInlineEventCreated,
+                        onAddClick = { onAddEventClick(days[6]) },
+                        onWriteClick = { onWriteClick(days[6]) },
+                        onHandwritingInput = { text -> onHandwritingInput(days[6], text) },
+                        onEventClick = onEventClick,
+                        onHandwritingUsed = onHandwritingUsed,
+                        showWriteHint = showWriteHints,
+                        drawBorder = false
+                    )
+                }
+
+                // Tasks - spans 2 columns (no own border, sits inside unified grid)
+                Box(
+                    modifier = Modifier
+                        .weight(2f)
+                        .fillMaxHeight()
+                ) {
+                    TaskList(
+                        tasks = tasks,
+                        title = "Tasks",
+                        isCompact = false,
+                        showCompleted = true,
+                        showAddButton = true,
+                        showWriteHint = showWriteHints,
+                        recognizer = recognizer,
+                        onTaskTextRecognized = onTaskTextRecognized,
+                        onHandwritingUsed = onHandwritingUsed,
+                        onTaskToggle = onTaskToggle,
+                        onTaskClick = onTaskClick,
+                        onAddTask = onAddTaskClick
+                    )
+                }
             }
         }
     }

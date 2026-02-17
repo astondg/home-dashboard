@@ -68,6 +68,19 @@ fun CalendarScreen(
 ) {
     var startDate by remember { mutableStateOf(LocalDate.now()) }
 
+    // Auto-advance the rolling window when the date changes (e.g. overnight)
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L) // Check every minute
+            val now = LocalDate.now()
+            // If startDate is in the past and the user hasn't manually navigated away,
+            // advance to keep today as the first day
+            if (startDate.isBefore(now) && startDate.isAfter(now.minusDays(8))) {
+                startDate = now
+            }
+        }
+    }
+
     // Generate 7 days starting from startDate
     val days = remember(startDate) {
         (0 until 7).map { startDate.plusDays(it.toLong()) }
@@ -484,5 +497,7 @@ data class CalendarEventUi(
     val startTime: String?, // Formatted time string
     val isAllDay: Boolean,
     val color: Long, // ARGB color value
-    val providerType: com.homedashboard.app.data.model.CalendarProvider = com.homedashboard.app.data.model.CalendarProvider.LOCAL
+    val providerType: com.homedashboard.app.data.model.CalendarProvider = com.homedashboard.app.data.model.CalendarProvider.LOCAL,
+    val startMinutes: Int? = null, // Minutes from midnight
+    val endMinutes: Int? = null // Minutes from midnight
 )

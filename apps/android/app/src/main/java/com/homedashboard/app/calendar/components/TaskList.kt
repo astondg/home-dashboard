@@ -49,6 +49,7 @@ fun TaskList(
     title: String = "Tasks",
     showCompleted: Boolean = true,
     isCompact: Boolean = false,
+    columns: Int = 2,
     showAddButton: Boolean = true,
     showWriteHint: Boolean = true,
     // Inline handwriting support
@@ -167,7 +168,7 @@ fun TaskList(
                 // so checked/unchecked tasks have identical layout and spacing.
                 val orderedTasks = incompleteTasks + completedTasks
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Fixed(columns),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
