@@ -28,10 +28,15 @@ class SyncManager(
     private val iCloudSyncProvider: ICloudSyncProvider? = null,
     private val config: SyncConfig = SyncConfig()
 ) {
+    companion object {
+        private const val TAG = "SyncManager"
+        // Process-wide lock so multiple SyncManager instances (foreground + SyncWorker) don't overlap
+        private val isSyncing = AtomicBoolean(false)
+    }
+
     private val _syncState = MutableStateFlow(SyncState())
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
-    private val isSyncing = AtomicBoolean(false)
     private var syncJob: Job? = null
 
     /**
@@ -63,6 +68,7 @@ class SyncManager(
             // Check which providers are configured
             val hasGoogle = googleService != null && tokenStorage.hasTokens()
             val hasICloud = iCloudSyncProvider != null && tokenStorage.hasICloudCredentials()
+            Log.d(TAG, "Sync providers: Google=$hasGoogle, iCloud=$hasICloud (provider=${iCloudSyncProvider != null}, creds=${tokenStorage.hasICloudCredentials()})")
 
             if (!hasGoogle && !hasICloud) {
                 Log.w(TAG, "No calendar providers configured")
@@ -596,7 +602,4 @@ class SyncManager(
         )
     }
 
-    companion object {
-        private const val TAG = "SyncManager"
-    }
 }

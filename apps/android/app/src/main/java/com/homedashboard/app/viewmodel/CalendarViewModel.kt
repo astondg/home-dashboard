@@ -214,7 +214,7 @@ class CalendarViewModel(
     /**
      * Trigger an immediate sync with all connected calendar providers.
      */
-    fun syncNow() {
+    fun syncNow(forceFullSync: Boolean = false) {
         // Check if any provider is authenticated
         val googleAuthenticated = authState.value is AuthState.Authenticated
         val iCloudAuthenticated = iCloudAuthState.value is ICloudAuthState.Authenticated
@@ -226,12 +226,12 @@ class CalendarViewModel(
         viewModelScope.launch {
             _syncState.value = _syncState.value.copy(
                 status = SyncStatus.SYNCING,
-                message = "Starting sync...",
+                message = if (forceFullSync) "Full re-sync..." else "Starting sync...",
                 progress = 0f
             )
 
             try {
-                val result = syncManager?.performFullSync()
+                val result = syncManager?.performFullSync(forceFullSync = forceFullSync)
                 result?.fold(
                     onSuccess = { syncResult ->
                         _syncState.value = _syncState.value.copy(
@@ -377,6 +377,11 @@ class CalendarViewModel(
 
             calendarDao.insertEvent(event)
             closeAddEventDialog()
+
+            // Trigger immediate sync so the event reaches the remote calendar
+            if (event.needsSync) {
+                syncNow()
+            }
         }
     }
 
@@ -514,14 +519,23 @@ class CalendarViewModel(
 
                 calendarDao.updateEvent(updatedEvent)
                 closeEventDetail()
+
+                if (updatedEvent.needsSync) {
+                    syncNow()
+                }
             }
         }
     }
 
     fun deleteEvent(eventId: String) {
         viewModelScope.launch {
+            val event = calendarDao.getEventById(eventId)
             calendarDao.softDeleteEvent(eventId)
             closeEventDetail()
+
+            if (event != null && event.providerType != CalendarProvider.LOCAL) {
+                syncNow()
+            }
         }
     }
 
@@ -685,13 +699,14 @@ class CalendarViewModel(
     // ==================== Debug Operations ====================
 
     /**
-     * Reset locally created data only (local events and tasks).
-     * Synced calendar events and calendars are preserved.
+     * Reset all local data (events, tasks, calendars).
+     * After reset, a force full sync will re-download everything cleanly.
      * Only intended for use in debug builds.
      */
     fun resetLocalData() {
         viewModelScope.launch {
-            calendarDao.clearLocalEvents()
+            calendarDao.clearAllEvents()
+            calendarDao.clearAllCalendars()
             taskDao.clearAllTasks()
         }
     }

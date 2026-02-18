@@ -4,10 +4,13 @@ import android.content.Context
 import android.util.Log
 import androidx.work.*
 import com.homedashboard.app.auth.GoogleAuthManager
+import com.homedashboard.app.auth.ICloudAuthManager
 import com.homedashboard.app.auth.TokenStorage
 import com.homedashboard.app.data.local.AppDatabase
 import com.homedashboard.app.data.remote.GoogleCalendarService
 import com.homedashboard.app.data.remote.GoogleEventMapper
+import com.homedashboard.app.data.remote.caldav.CalDavEventMapper
+import com.homedashboard.app.data.remote.caldav.CalDavService
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
@@ -28,24 +31,43 @@ class SyncWorker(
             // Initialize dependencies
             val tokenStorage = TokenStorage(applicationContext)
 
-            // Check if user is authenticated
-            if (!tokenStorage.hasTokens()) {
-                Log.d(TAG, "Not authenticated, skipping sync")
+            // Check if user is authenticated with any provider
+            val hasGoogle = tokenStorage.hasTokens()
+            val hasICloud = tokenStorage.hasICloudCredentials()
+            if (!hasGoogle && !hasICloud) {
+                Log.d(TAG, "Not authenticated with any provider, skipping sync")
                 return Result.success()
             }
 
             // Build dependencies
             val database = AppDatabase.getDatabase(applicationContext)
             val okHttpClient = buildOkHttpClient()
-            val authManager = GoogleAuthManager(applicationContext, tokenStorage)
-            val googleService = GoogleCalendarService(okHttpClient, authManager)
-            val eventMapper = GoogleEventMapper()
+
+            // Google Calendar
+            val authManager = if (hasGoogle) GoogleAuthManager(applicationContext, tokenStorage) else null
+            val googleService = if (hasGoogle && authManager != null) GoogleCalendarService(okHttpClient, authManager) else null
+            val eventMapper = if (hasGoogle) GoogleEventMapper() else null
+
+            // iCloud Calendar
+            val iCloudSyncProvider = if (hasICloud) {
+                val iCloudAuthManager = ICloudAuthManager(tokenStorage, okHttpClient)
+                val calDavService = CalDavService(okHttpClient, iCloudAuthManager)
+                val calDavEventMapper = CalDavEventMapper()
+                ICloudSyncProvider(
+                    calendarDao = database.calendarDao(),
+                    calDavService = calDavService,
+                    eventMapper = calDavEventMapper,
+                    tokenStorage = tokenStorage,
+                    authManager = iCloudAuthManager
+                )
+            } else null
 
             val syncManager = SyncManager(
                 calendarDao = database.calendarDao(),
                 googleService = googleService,
                 eventMapper = eventMapper,
-                tokenStorage = tokenStorage
+                tokenStorage = tokenStorage,
+                iCloudSyncProvider = iCloudSyncProvider
             )
 
             // Perform sync

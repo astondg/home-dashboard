@@ -136,7 +136,10 @@ class CalDavService(
             val body = response.body?.string()
                 ?: return@withContext Result.failure(CalDavParseException("Empty response"))
 
+            Log.d(TAG, "syncEvents: response body length=${body.length}, first 500 chars: ${body.take(500)}")
+
             val syncResponse = xmlParser.parseSyncCollectionResponse(body)
+            Log.d(TAG, "syncEvents: parsed ${syncResponse.events.size} events, syncToken=${syncResponse.syncToken?.take(40)}...")
             Result.success(syncResponse)
         } catch (e: CalDavException) {
             Result.failure(e)

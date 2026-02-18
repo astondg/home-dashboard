@@ -60,6 +60,7 @@ fun SettingsScreen(
     onGoogleSignIn: () -> Unit = {},
     onGoogleSignOut: () -> Unit = {},
     onSyncNow: () -> Unit = {},
+    onForceSync: () -> Unit = {},
     // iCloud Calendar sync
     iCloudAuthState: ICloudAuthState = ICloudAuthState.Unknown,
     onICloudConnect: (email: String, appPassword: String) -> Unit = { _, _ -> },
@@ -180,6 +181,23 @@ fun SettingsScreen(
                     onDisconnect = onICloudDisconnect,
                     onSyncNow = onSyncNow
                 )
+            }
+
+            // Force full re-sync (when any provider is authenticated)
+            if (authState is AuthState.Authenticated || iCloudAuthState is ICloudAuthState.Authenticated) {
+                item {
+                    TextButton(
+                        onClick = onForceSync,
+                        enabled = syncState.status != SyncStatus.SYNCING,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    ) {
+                        Text(
+                            "Force Full Re-sync",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             }
 
             // Calendar visibility toggles (show when we have calendars)

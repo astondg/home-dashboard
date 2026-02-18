@@ -69,7 +69,6 @@ class EntityExtractionParser {
             }
 
             var extractedTime: LocalTime? = null
-            var extractedDate: LocalDate = targetDate
             var extractedLocation: String? = null
 
             // Track which character ranges to strip from the original text
@@ -84,11 +83,9 @@ class EntityExtractionParser {
                             val zonedDt = instant.atZone(ZoneId.systemDefault())
                             extractedTime = zonedDt.toLocalTime()
 
-                            // Use extracted date if it differs from target
-                            val parsedDate = zonedDt.toLocalDate()
-                            if (parsedDate != LocalDate.now()) {
-                                extractedDate = parsedDate
-                            }
+                            // Always use targetDate — the user chose the day cell.
+                            // ML Kit's date is relative to "now" and unreliable
+                            // for our use case (e.g. "8am" becomes tomorrow if it's past 8am).
 
                             stripRanges.add(annotation.start..annotation.end - 1)
                             Log.d(TAG, "Extracted time: $extractedTime from '${text.substring(annotation.start, annotation.end)}'")
@@ -124,7 +121,7 @@ class EntityExtractionParser {
 
             ParsedEvent(
                 title = title.ifBlank { text.trim() },
-                date = extractedDate,
+                date = targetDate,
                 startTime = extractedTime,
                 endTime = extractedTime?.plusHours(1),
                 location = extractedLocation,

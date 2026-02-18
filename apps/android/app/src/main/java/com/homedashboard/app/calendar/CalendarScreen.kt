@@ -468,7 +468,7 @@ private fun CalendarHeader(
         AlertDialog(
             onDismissRequest = { showResetConfirmation = false },
             title = { Text("Reset Local Data") },
-            text = { Text("This will delete locally created events and tasks. Synced calendar data will be preserved. This cannot be undone.") },
+            text = { Text("This will delete all local events, calendars, and tasks. Use Force Full Re-sync afterwards to re-download from iCloud/Google. This cannot be undone.") },
             confirmButton = {
                 TextButton(
                     onClick = {

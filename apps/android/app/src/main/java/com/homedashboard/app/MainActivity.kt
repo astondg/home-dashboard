@@ -165,12 +165,13 @@ class MainActivity : ComponentActivity() {
             authManager.checkAuthState()
             iCloudAuthManager.checkAuthState()
 
-            // Schedule background sync if any provider is authenticated
+            // Schedule background sync and do an immediate sync on launch
             val hasGoogle = tokenStorage.hasTokens()
             val hasICloud = tokenStorage.hasICloudCredentials()
             if (hasGoogle || hasICloud) {
                 SyncWorker.schedulePeriodicSync(applicationContext)
                 Log.d(TAG, "Background sync scheduled (Google: $hasGoogle, iCloud: $hasICloud)")
+                viewModel.syncNow()
             }
         }
 
@@ -316,6 +317,9 @@ class MainActivity : ComponentActivity() {
                             },
                             onSyncNow = {
                                 viewModel.syncNow()
+                            },
+                            onForceSync = {
+                                viewModel.syncNow(forceFullSync = true)
                             },
                             // iCloud Calendar sync
                             iCloudAuthState = iCloudAuthState,

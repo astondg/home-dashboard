@@ -90,8 +90,11 @@ class GoogleCalendarService(
             }
             if (pageToken != null) add("pageToken" to pageToken)
             add("maxResults" to maxResults.toString())
-            add("singleEvents" to singleEvents.toString())
-            add("orderBy" to orderBy)
+            if (syncToken == null) {
+                // orderBy and singleEvents are incompatible with syncToken
+                add("singleEvents" to singleEvents.toString())
+                add("orderBy" to orderBy)
+            }
             add("showDeleted" to "true") // Required for incremental sync
         }
 

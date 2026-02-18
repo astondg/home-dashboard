@@ -131,11 +131,14 @@ class CalDavEventMapper {
             } else {
                 // DateTime with time component
                 val instant = Instant.ofEpochMilli(date.time)
+                // Always convert to system default timezone for display
+                // iCal UTC times (ending in Z) need conversion to local time
                 if (date is net.fortuna.ical4j.model.DateTime && date.timeZone != null) {
                     instant.atZone(ZoneId.of(date.timeZone.id))
+                        .withZoneSameInstant(ZoneId.systemDefault())
                 } else {
-                    // UTC or floating time
-                    instant.atZone(ZoneId.of("UTC"))
+                    // UTC or floating time — convert to local
+                    instant.atZone(ZoneId.systemDefault())
                 }
             }
         } catch (e: Exception) {
@@ -316,7 +319,8 @@ class CalDavEventMapper {
      * Generate a unique filename for a new event.
      */
     fun generateEventFilename(event: CalendarEvent): String {
-        val uid = event.remoteId ?: event.id
+        // Must match the UID used in toICalendar() so remoteId matches on download
+        val uid = event.remoteId ?: "${event.id}@homedashboard.app"
         return "$uid.ics"
     }
 
