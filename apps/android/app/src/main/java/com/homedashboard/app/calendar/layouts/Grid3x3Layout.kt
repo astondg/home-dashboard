@@ -13,7 +13,7 @@ import com.homedashboard.app.calendar.CalendarEventUi
 import com.homedashboard.app.calendar.components.*
 import com.homedashboard.app.data.weather.DailyWeather
 import com.homedashboard.app.handwriting.HandwritingRecognizer
-import com.homedashboard.app.handwriting.NaturalLanguageParser
+import com.homedashboard.app.handwriting.EntityExtractionParser
 import com.homedashboard.app.handwriting.ParsedEvent
 import com.homedashboard.app.ui.theme.LocalDimensions
 import java.time.LocalDate
@@ -40,7 +40,7 @@ fun Grid3x3Layout(
     showWriteHints: Boolean = true,
     // Inline handwriting support
     recognizer: HandwritingRecognizer? = null,
-    parser: NaturalLanguageParser? = null,
+    parser: EntityExtractionParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
     onTaskTextRecognized: ((String) -> Unit)? = null,
     onHandwritingUsed: (() -> Unit)? = null,

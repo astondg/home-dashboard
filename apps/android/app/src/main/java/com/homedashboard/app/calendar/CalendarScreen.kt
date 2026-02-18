@@ -22,7 +22,7 @@ import com.homedashboard.app.calendar.components.TaskUi
 import com.homedashboard.app.calendar.layouts.*
 import com.homedashboard.app.data.weather.RainForecast
 import com.homedashboard.app.handwriting.HandwritingRecognizer
-import com.homedashboard.app.handwriting.NaturalLanguageParser
+import com.homedashboard.app.handwriting.EntityExtractionParser
 import com.homedashboard.app.handwriting.ParsedEvent
 import com.homedashboard.app.BuildConfig
 import com.homedashboard.app.settings.CalendarLayoutType
@@ -48,7 +48,7 @@ fun CalendarScreen(
     rainForecast: RainForecast? = null,
     // Inline handwriting support
     recognizer: HandwritingRecognizer? = null,
-    parser: NaturalLanguageParser? = null,
+    parser: EntityExtractionParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
     onHandwritingUsed: (() -> Unit)? = null,
     // Callbacks

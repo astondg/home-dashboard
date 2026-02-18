@@ -41,7 +41,7 @@ import java.time.LocalTime
 fun InlineDayWritingArea(
     date: LocalDate,
     recognizer: HandwritingRecognizer,
-    parser: NaturalLanguageParser,
+    parser: EntityExtractionParser,
     modifier: Modifier = Modifier,
     isCompact: Boolean = false,
     strokeColor: Color = MaterialTheme.colorScheme.onSurface,
@@ -225,6 +225,7 @@ fun InlineDayWritingArea(
             parsedEvent?.let { event ->
                 // Editable state — keyed on parsedEvent so they reset when a new recognition arrives
                 var editTitle by remember(event) { mutableStateOf(event.title) }
+                var editLocation by remember(event) { mutableStateOf(event.location ?: "") }
                 var editHour by remember(event) { mutableStateOf(event.startTime?.hour ?: 9) }
                 var editMinute by remember(event) { mutableStateOf(event.startTime?.minute ?: 0) }
                 var editIsAllDay by remember(event) { mutableStateOf(event.isAllDay) }
@@ -234,7 +235,8 @@ fun InlineDayWritingArea(
                         title = editTitle.trim(),
                         startTime = if (editIsAllDay) null else LocalTime.of(editHour, editMinute),
                         endTime = if (editIsAllDay) null else event.endTime,
-                        isAllDay = editIsAllDay
+                        isAllDay = editIsAllDay,
+                        location = editLocation.trim().ifBlank { null }
                     )
                     onEventCreated(edited)
                     clearAll()
@@ -273,6 +275,51 @@ fun InlineDayWritingArea(
                             decorationBox = { innerTextField ->
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     innerTextField()
+                                    HorizontalDivider(
+                                        modifier = Modifier
+                                            .fillMaxWidth(0.6f)
+                                            .padding(top = 2.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                }
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 8.dp))
+
+                        // Editable location
+                        BasicTextField(
+                            value = editLocation,
+                            onValueChange = { editLocation = it },
+                            singleLine = true,
+                            textStyle = (if (isCompact) {
+                                MaterialTheme.typography.bodySmall
+                            } else {
+                                MaterialTheme.typography.bodyLarge
+                            }).copy(
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth(),
+                            decorationBox = { innerTextField ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        if (editLocation.isEmpty()) {
+                                            Text(
+                                                text = "Location",
+                                                style = (if (isCompact) {
+                                                    MaterialTheme.typography.bodySmall
+                                                } else {
+                                                    MaterialTheme.typography.bodyLarge
+                                                }).copy(
+                                                    textAlign = TextAlign.Center,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                                )
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
                                     HorizontalDivider(
                                         modifier = Modifier
                                             .fillMaxWidth(0.6f)

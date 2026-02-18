@@ -15,7 +15,7 @@ import com.homedashboard.app.calendar.components.*
 import com.homedashboard.app.data.weather.DailyWeather
 import com.homedashboard.app.handwriting.HandwritingRecognizer
 import com.homedashboard.app.handwriting.InlineDayWritingArea
-import com.homedashboard.app.handwriting.NaturalLanguageParser
+import com.homedashboard.app.handwriting.EntityExtractionParser
 import com.homedashboard.app.handwriting.ParsedEvent
 import com.homedashboard.app.ui.theme.LocalDimensions
 import com.homedashboard.app.ui.theme.LocalIsEInk
@@ -49,7 +49,7 @@ fun TimelineHorizontalLayout(
     showQuickAdd: Boolean = true,
     // Inline handwriting support
     recognizer: HandwritingRecognizer? = null,
-    parser: NaturalLanguageParser? = null,
+    parser: EntityExtractionParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
     onTaskTextRecognized: ((String) -> Unit)? = null,
     onHandwritingUsed: (() -> Unit)? = null,
@@ -72,6 +72,11 @@ fun TimelineHorizontalLayout(
         computeHourRange(eventsMap)
     }
 
+    // Check if any day has all-day events (to reserve consistent space)
+    val anyDayHasAllDay = remember(eventsMap) {
+        eventsMap.values.any { events -> events.any { it.isAllDay } }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -92,6 +97,11 @@ fun TimelineHorizontalLayout(
             ) {
                 // Empty header space to align with day headers
                 Spacer(modifier = Modifier.height(60.dp))
+
+                // All-day row spacer to stay aligned with day columns
+                if (anyDayHasAllDay) {
+                    Spacer(modifier = Modifier.height(25.dp))
+                }
 
                 // Time labels
                 TimeAxisColumn(
@@ -142,12 +152,16 @@ fun TimelineHorizontalLayout(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                        // All-day events
-                        if (allDayEvents.isNotEmpty()) {
-                            AllDayEventsRow(
-                                events = allDayEvents,
-                                onEventClick = onEventClick
-                            )
+                        // All-day events row (fixed height across all days when any day has them)
+                        if (anyDayHasAllDay) {
+                            Box(modifier = Modifier.height(25.dp)) {
+                                if (allDayEvents.isNotEmpty()) {
+                                    AllDayEventsRow(
+                                        events = allDayEvents,
+                                        onEventClick = onEventClick
+                                    )
+                                }
+                            }
                             HorizontalDivider(
                                 color = MaterialTheme.colorScheme.outlineVariant,
                                 thickness = 0.5.dp

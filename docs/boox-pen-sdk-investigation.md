@@ -74,9 +74,31 @@ input pipeline at the window manager level, and this hook only works for specifi
 
 If low-latency pen rendering becomes critical:
 
-1. **Try `EpdController` first** — Use `EpdController.applyApplicationFastMode(true)` or
-   `EpdController.setViewDefaultUpdateMode(view, UpdateMode.DU)` to get faster e-ink
-   refresh without needing `TouchHelper` at all
+1. **~~Try `EpdController` first~~** — **IMPLEMENTED** in `EpdRefreshManager.kt`.
+   Uses `setViewDefaultUpdateMode(view, UpdateMode.HAND_WRITING_REPAINT_MODE)` on pen down
+   and `resetViewUpdateMode(view)` + `repaintEveryThing(UpdateMode.GC)` on pen up.
+   Switches the writing area to fast handwriting refresh during drawing, then restores
+   normal refresh after. API methods verified against the official
+   [OnyxAndroidDemo](https://github.com/onyx-intl/OnyxAndroidDemo) repository.
+
+   **Note (Feb 2026):** Initial implementation used fabricated method names
+   (`enableA2ForSpecificView`, `disableA2ForSpecificView`, `applyGCOnce`) that don't
+   exist in the SDK. Reflection calls silently failed. Fixed to use real API methods.
+   However, refresh mode alone doesn't significantly reduce latency — it only controls
+   the e-ink waveform speed, not the rendering pipeline overhead.
+
+   **Direct framebuffer rendering (Feb 2026):** Added `EpdController.moveTo()` /
+   `addStrokePoint()` / `finishStroke()` calls in `ComposeCanvasWritingArea`. The methods
+   resolve successfully via reflection but appear to be no-ops without an active
+   TouchHelper raw drawing pipeline — no visible output on their own.
+
+   **Canvas redraw throttling (Feb 2026):** The key optimization that actually worked.
+   Throttle Compose Canvas redraws to ~12fps (83ms interval) on Boox to match e-ink
+   refresh capability. Without throttling, 60+ redraws/sec pile up and the display is
+   always behind. With throttling, points accumulate between redraws and appear in smooth
+   chunks. Combined with `HAND_WRITING_REPAINT_MODE`, this brings latency to a usable
+   level — not as fast as the native Boox notes app (which uses firmware-level raw
+   drawing), but functional for handwriting recognition input.
 
 2. **System overlay approach** — Create a foreground Service with `TYPE_APPLICATION_OVERLAY`
    window containing the SurfaceView, similar to boox-rapid-draw. Requires

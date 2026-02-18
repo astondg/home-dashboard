@@ -30,8 +30,8 @@ import com.homedashboard.app.data.remote.GoogleCalendarService
 import com.homedashboard.app.data.remote.GoogleEventMapper
 import com.homedashboard.app.data.remote.caldav.CalDavEventMapper
 import com.homedashboard.app.data.remote.caldav.CalDavService
+import com.homedashboard.app.handwriting.EntityExtractionParser
 import com.homedashboard.app.handwriting.HandwritingRecognizer
-import com.homedashboard.app.handwriting.NaturalLanguageParser
 import com.homedashboard.app.settings.CalendarSettings
 import com.homedashboard.app.settings.DisplayDetection
 import com.homedashboard.app.settings.SettingsRepository
@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var viewModel: CalendarViewModel
     private lateinit var handwritingRecognizer: HandwritingRecognizer
-    private val naturalLanguageParser = NaturalLanguageParser()
+    private lateinit var entityExtractionParser: EntityExtractionParser
 
     // Google Calendar sync components
     private lateinit var tokenStorage: TokenStorage
@@ -174,11 +174,14 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Initialize handwriting recognizer
+        // Initialize handwriting recognizer and entity extraction parser
         handwritingRecognizer = HandwritingRecognizer(applicationContext)
+        entityExtractionParser = EntityExtractionParser()
         lifecycleScope.launch {
             val success = handwritingRecognizer.initialize()
             Log.d(TAG, "HandwritingRecognizer initialized: success=$success, isReady=${handwritingRecognizer.isReady()}")
+            val entitySuccess = entityExtractionParser.initialize()
+            Log.d(TAG, "EntityExtractionParser initialized: success=$entitySuccess")
         }
 
         setContent {
@@ -342,7 +345,7 @@ class MainActivity : ComponentActivity() {
                             rainForecast = rainForecast,
                             // Inline handwriting - write directly in day cells
                             recognizer = handwritingRecognizer,
-                            parser = naturalLanguageParser,
+                            parser = entityExtractionParser,
                             onInlineEventCreated = { parsedEvent ->
                                 viewModel.createEventFromParsedInput(
                                     title = parsedEvent.title,

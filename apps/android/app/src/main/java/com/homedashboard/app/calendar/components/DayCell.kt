@@ -30,7 +30,7 @@ import com.homedashboard.app.data.weather.DailyWeather
 import com.homedashboard.app.data.weather.WeatherIcon
 import com.homedashboard.app.handwriting.HandwritingRecognizer
 import com.homedashboard.app.handwriting.InlineDayWritingArea
-import com.homedashboard.app.handwriting.NaturalLanguageParser
+import com.homedashboard.app.handwriting.EntityExtractionParser
 import com.homedashboard.app.handwriting.ParsedEvent
 import com.homedashboard.app.ui.theme.LocalDimensions
 import com.homedashboard.app.ui.theme.LocalIsEInk
@@ -68,7 +68,7 @@ fun DayCell(
     weather: DailyWeather? = null,
     // Inline handwriting (direct writing in cell)
     recognizer: HandwritingRecognizer? = null,
-    parser: NaturalLanguageParser? = null,
+    parser: EntityExtractionParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
     onHandwritingUsed: (() -> Unit)? = null,
     // Legacy callbacks
@@ -595,7 +595,7 @@ fun TimelineDayCell(
     weather: DailyWeather? = null,
     // Inline handwriting (direct writing in cell)
     recognizer: HandwritingRecognizer? = null,
-    parser: NaturalLanguageParser? = null,
+    parser: EntityExtractionParser? = null,
     onInlineEventCreated: ((ParsedEvent) -> Unit)? = null,
     onHandwritingUsed: (() -> Unit)? = null,
     // Legacy callbacks

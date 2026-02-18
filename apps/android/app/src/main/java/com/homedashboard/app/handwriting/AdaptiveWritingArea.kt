@@ -278,6 +278,11 @@ private fun buildSmoothedPath(points: List<Offset>): Path {
  * 3. Historical MotionEvent points — processes all intermediate samples between frames
  * 4. MotionEventPredictor — renders predicted next point to reduce perceived latency
  * 5. Path caching + bezier smoothing — cached Paths for completed strokes, quadratic curves
+ *
+ * On Boox e-ink devices, additionally uses EpdController direct framebuffer rendering
+ * for "wet ink" — pen strokes are written directly to the e-ink framebuffer, bypassing
+ * the entire Android rendering pipeline. Compose Canvas still renders "dry ink"
+ * (completed strokes) for persistence.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -292,9 +297,16 @@ internal fun ComposeCanvasWritingArea(
 ) {
     val view = LocalView.current
     val motionPredictor = remember(view) { MotionEventPredictor.newInstance(view) }
+    val useDirectDraw = EpdRefreshManager.isBoox
 
     // Predicted point rendered as temporary extension of current stroke
     var predictedPoint by remember { mutableStateOf<Offset?>(null) }
+
+    // On Boox e-ink: throttle Canvas redraws to ~12fps (83ms) to match e-ink refresh rate.
+    // Without throttling, 60+ redraws/sec pile up and the display is always behind.
+    // A counter state that we increment on a throttled schedule to trigger redraws.
+    var einkRedrawTrigger by remember { mutableIntStateOf(0) }
+    val lastRedrawTime = remember { longArrayOf(0L) } // using array to avoid state overhead
 
     // Path cache for completed strokes (they never change after being added)
     val pathCache = remember { mutableMapOf<Int, Path>() }
@@ -329,6 +341,15 @@ internal fun ComposeCanvasWritingArea(
                     MotionEvent.ACTION_DOWN -> {
                         // Unbuffered dispatch: deliver events immediately, skip vsync batching
                         view.requestUnbufferedDispatch(motionEvent)
+                        EpdRefreshManager.enableFastMode(view)
+
+                        // Direct framebuffer rendering: start stroke at pen position
+                        if (useDirectDraw) {
+                            EpdRefreshManager.drawMoveTo(
+                                view, motionEvent.x, motionEvent.y, config.strokeWidth
+                            )
+                        }
+
                         motionPredictor.record(motionEvent)
                         isDrawing = true
                         listener?.onStrokeStart(
@@ -341,25 +362,51 @@ internal fun ComposeCanvasWritingArea(
                         motionPredictor.record(motionEvent)
 
                         // Process ALL historical points (intermediate samples between frames).
-                        // On a 240Hz digitizer at 60Hz display, this recovers ~3-4 points per frame.
                         for (i in 0 until motionEvent.historySize) {
-                            listener?.onStrokeMove(
-                                motionEvent.getHistoricalX(i),
-                                motionEvent.getHistoricalY(i),
-                                motionEvent.getHistoricalEventTime(i)
+                            val hx = motionEvent.getHistoricalX(i)
+                            val hy = motionEvent.getHistoricalY(i)
+                            val ht = motionEvent.getHistoricalEventTime(i)
+
+                            // Direct framebuffer: render each point immediately
+                            if (useDirectDraw) {
+                                EpdRefreshManager.drawStrokePoint(
+                                    config.strokeWidth, hx, hy,
+                                    motionEvent.getHistoricalPressure(i),
+                                    motionEvent.getHistoricalSize(i),
+                                    ht.toFloat()
+                                )
+                            }
+
+                            listener?.onStrokeMove(hx, hy, ht)
+                        }
+
+                        // Current point
+                        val x = motionEvent.x
+                        val y = motionEvent.y
+                        if (useDirectDraw) {
+                            EpdRefreshManager.drawStrokePoint(
+                                config.strokeWidth, x, y,
+                                motionEvent.pressure, motionEvent.size,
+                                motionEvent.eventTime.toFloat()
                             )
                         }
-                        // Then the current point
-                        listener?.onStrokeMove(
-                            motionEvent.x, motionEvent.y, motionEvent.eventTime
-                        )
 
-                        // Render predicted next point to reduce perceived latency
-                        val predicted = motionPredictor.predict()
-                        predictedPoint = if (predicted != null) {
-                            Offset(predicted.x, predicted.y)
-                        } else {
-                            null
+                        listener?.onStrokeMove(x, y, motionEvent.eventTime)
+
+                        // Trigger Canvas redraw to show the in-progress stroke.
+                        // On Boox: throttle to ~12fps (83ms) to match e-ink refresh rate.
+                        // On standard: update every frame for smooth rendering.
+                        val now = motionEvent.eventTime
+                        if (!useDirectDraw || now - lastRedrawTime[0] >= 83L) {
+                            lastRedrawTime[0] = now
+                            val predicted = motionPredictor.predict()
+                            predictedPoint = if (predicted != null) {
+                                Offset(predicted.x, predicted.y)
+                            } else {
+                                // Still need to trigger redraw — bump the counter
+                                einkRedrawTrigger++
+                                null
+                            }
                         }
 
                         true
@@ -368,6 +415,17 @@ internal fun ComposeCanvasWritingArea(
                         if (!isDrawing) return@pointerInteropFilter false
                         isDrawing = false
                         predictedPoint = null
+
+                        // Finish the direct framebuffer stroke
+                        if (useDirectDraw) {
+                            EpdRefreshManager.drawFinishStroke(
+                                config.strokeWidth, motionEvent.x, motionEvent.y,
+                                motionEvent.pressure, motionEvent.size,
+                                motionEvent.eventTime.toFloat()
+                            )
+                        }
+
+                        EpdRefreshManager.disableFastMode(view)
                         listener?.onStrokeEnd()
                         true
                     }
@@ -389,7 +447,11 @@ internal fun ComposeCanvasWritingArea(
             }
         }
 
-        // Draw current stroke with bezier smoothing + predicted point extension
+        // Draw current stroke (wet ink).
+        // Read einkRedrawTrigger to ensure Canvas redraws when triggered on Boox.
+        @Suppress("UNUSED_EXPRESSION")
+        einkRedrawTrigger
+
         currentStroke?.let { stroke ->
             if (stroke.points.size > 1) {
                 val points = predictedPoint?.let { stroke.points + it } ?: stroke.points

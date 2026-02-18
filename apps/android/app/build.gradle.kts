@@ -93,6 +93,9 @@ dependencies {
     // Note: Can also use native InputMethodManager.startStylusHandwriting() on API 33+
     implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
 
+    // Google ML Kit - Entity Extraction (time, address, etc. from text)
+    implementation("com.google.mlkit:entity-extraction:16.0.0-beta5")
+
     // Motion prediction for stylus latency reduction
     implementation("androidx.input:input-motionprediction:1.0.0-beta01")
 
