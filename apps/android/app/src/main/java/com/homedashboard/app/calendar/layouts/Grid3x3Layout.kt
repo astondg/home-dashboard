@@ -99,27 +99,29 @@ fun Grid3x3Layout(
                     }
             ) {
                 days.take(3).forEach { date ->
-                    DayCell(
-                        date = date,
-                        events = eventsMap[date] ?: emptyList(),
-                        isToday = date == today,
-                        isCompact = false,
-                        showDayName = true,
-                        headerLayout = DayHeaderLayout.HORIZONTAL,
-                        showAddButton = true,
-                        weather = weatherByDate[date],
-                        modifier = Modifier.weight(1f),
-                        recognizer = recognizer,
-                        parser = parser,
-                        onInlineEventCreated = onInlineEventCreated,
-                        onAddClick = { onAddEventClick(date) },
-                        onWriteClick = { onWriteClick(date) },
-                        onHandwritingInput = { text -> onHandwritingInput(date, text) },
-                        onEventClick = onEventClick,
-                        onHandwritingUsed = onHandwritingUsed,
-                        showWriteHint = showWriteHints,
-                        drawBorder = false
-                    )
+                    key(date) {
+                        DayCell(
+                            date = date,
+                            events = eventsMap[date] ?: emptyList(),
+                            isToday = date == today,
+                            isCompact = false,
+                            showDayName = true,
+                            headerLayout = DayHeaderLayout.HORIZONTAL,
+                            showAddButton = true,
+                            weather = weatherByDate[date],
+                            modifier = Modifier.weight(1f),
+                            recognizer = recognizer,
+                            parser = parser,
+                            onInlineEventCreated = onInlineEventCreated,
+                            onAddClick = { onAddEventClick(date) },
+                            onWriteClick = { onWriteClick(date) },
+                            onHandwritingInput = { text -> onHandwritingInput(date, text) },
+                            onEventClick = onEventClick,
+                            onHandwritingUsed = onHandwritingUsed,
+                            showWriteHint = showWriteHints,
+                            drawBorder = false
+                        )
+                    }
                 }
             }
 
@@ -152,27 +154,29 @@ fun Grid3x3Layout(
                     }
             ) {
                 days.drop(3).take(3).forEach { date ->
-                    DayCell(
-                        date = date,
-                        events = eventsMap[date] ?: emptyList(),
-                        isToday = date == today,
-                        isCompact = false,
-                        showDayName = true,
-                        headerLayout = DayHeaderLayout.HORIZONTAL,
-                        showAddButton = true,
-                        weather = weatherByDate[date],
-                        modifier = Modifier.weight(1f),
-                        recognizer = recognizer,
-                        parser = parser,
-                        onInlineEventCreated = onInlineEventCreated,
-                        onAddClick = { onAddEventClick(date) },
-                        onWriteClick = { onWriteClick(date) },
-                        onHandwritingInput = { text -> onHandwritingInput(date, text) },
-                        onEventClick = onEventClick,
-                        onHandwritingUsed = onHandwritingUsed,
-                        showWriteHint = showWriteHints,
-                        drawBorder = false
-                    )
+                    key(date) {
+                        DayCell(
+                            date = date,
+                            events = eventsMap[date] ?: emptyList(),
+                            isToday = date == today,
+                            isCompact = false,
+                            showDayName = true,
+                            headerLayout = DayHeaderLayout.HORIZONTAL,
+                            showAddButton = true,
+                            weather = weatherByDate[date],
+                            modifier = Modifier.weight(1f),
+                            recognizer = recognizer,
+                            parser = parser,
+                            onInlineEventCreated = onInlineEventCreated,
+                            onAddClick = { onAddEventClick(date) },
+                            onWriteClick = { onWriteClick(date) },
+                            onHandwritingInput = { text -> onHandwritingInput(date, text) },
+                            onEventClick = onEventClick,
+                            onHandwritingUsed = onHandwritingUsed,
+                            showWriteHint = showWriteHints,
+                            drawBorder = false
+                        )
+                    }
                 }
             }
 

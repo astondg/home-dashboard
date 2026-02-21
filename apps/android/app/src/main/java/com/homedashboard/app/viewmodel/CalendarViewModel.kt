@@ -17,6 +17,7 @@ import com.homedashboard.app.data.local.TaskDao
 import com.homedashboard.app.data.model.Calendar
 import com.homedashboard.app.data.model.CalendarEvent
 import com.homedashboard.app.data.model.CalendarProvider
+import android.util.Log
 import com.homedashboard.app.data.model.Task
 import com.homedashboard.app.data.weather.DailyWeather
 import com.homedashboard.app.data.weather.RainForecast
@@ -50,6 +51,10 @@ class CalendarViewModel(
     private val settingsRepository: SettingsRepository? = null,
     private val weatherRepository: WeatherRepository = WeatherRepository()
 ) : ViewModel() {
+
+    companion object {
+        private const val TAG = "CalendarViewModel"
+    }
 
     // Time formatter for display
     private val timeFormatter = DateTimeFormatter.ofPattern("h:mm a")
@@ -347,6 +352,7 @@ class CalendarViewModel(
     ) {
         viewModelScope.launch {
             val zone = ZoneId.systemDefault()
+            Log.d(TAG, "addEvent: title='$title' date=$date isAllDay=$isAllDay zone=$zone")
             val startDateTime = if (isAllDay) {
                 date.atStartOfDay(zone)
             } else {
@@ -357,6 +363,7 @@ class CalendarViewModel(
             } else {
                 (endTime ?: startTime?.plusHours(1) ?: LocalTime.of(10, 0)).atDate(date).atZone(zone)
             }
+            Log.d(TAG, "addEvent: startDateTime=$startDateTime (localDate=${startDateTime.toLocalDate()}) endDateTime=$endDateTime")
 
             // Resolve default calendar
             val defaultCal = resolveDefaultCalendar()
@@ -376,6 +383,7 @@ class CalendarViewModel(
             )
 
             calendarDao.insertEvent(event)
+            Log.d(TAG, "addEvent: inserted event id=${event.id} with startDate=${event.startTime.toLocalDate()}")
             closeAddEventDialog()
 
             // Trigger immediate sync so the event reaches the remote calendar
@@ -560,6 +568,7 @@ class CalendarViewModel(
         isAllDay: Boolean,
         location: String?
     ) {
+        Log.d(TAG, "createEventFromParsedInput: title='$title' date=$date isAllDay=$isAllDay")
         addEvent(
             title = title,
             date = date,

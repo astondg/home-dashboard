@@ -124,9 +124,17 @@ class CalDavEventMapper {
     ): ZonedDateTime? {
         return try {
             if (isAllDay) {
-                // All-day: date-only value, convert via epoch millis to LocalDate
-                val instant = Instant.ofEpochMilli(date.time)
-                val localDate = instant.atZone(ZoneId.of("UTC")).toLocalDate()
+                // All-day: date-only value. Parse the string representation directly
+                // to avoid any timezone issues with ical4j's epoch millis.
+                val dateStr = date.toString() // ical4j Date.toString() returns "yyyyMMdd"
+                val localDate = try {
+                    java.time.LocalDate.parse(dateStr, DATE_FORMATTER)
+                } catch (e: Exception) {
+                    // Fallback to epoch millis via UTC
+                    Log.w(TAG, "Failed to parse date string '$dateStr', falling back to epoch millis", e)
+                    Instant.ofEpochMilli(date.time).atZone(ZoneId.of("UTC")).toLocalDate()
+                }
+                Log.d(TAG, "convertToZonedDateTime: allDay dateStr='$dateStr' → localDate=$localDate")
                 localDate.atStartOfDay(ZoneId.systemDefault())
             } else {
                 // DateTime with time component
@@ -207,6 +215,10 @@ class CalDavEventMapper {
     fun toICalendar(event: CalendarEvent): String {
         val uid = event.remoteId ?: "${event.id}@homedashboard.app"
         val now = ZonedDateTime.now()
+
+        if (event.isAllDay) {
+            Log.d(TAG, "toICalendar: allDay event '${event.title}' startTime=${event.startTime} → DATE=${formatDate(event.startTime)} (localDate=${event.startTime.toLocalDate()})")
+        }
 
         val sb = StringBuilder()
         sb.appendLine("BEGIN:VCALENDAR")
@@ -300,6 +312,13 @@ class CalDavEventMapper {
         remoteEvent: CalDavEvent,
         newEtag: String?
     ): CalendarEvent {
+        val localDate = localEvent.startTime.toLocalDate()
+        val remoteDate = remoteEvent.dtStart.toLocalDate()
+        if (localDate != remoteDate) {
+            Log.d(TAG, "mergeRemoteChanges: date change for '${localEvent.title}': " +
+                "local=$localDate → remote=$remoteDate")
+        }
+
         return localEvent.copy(
             title = remoteEvent.summary,
             description = remoteEvent.description,

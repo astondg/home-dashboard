@@ -229,6 +229,10 @@ class ICloudSyncProvider(
             tokenStorage.getCalDavSyncToken(calendar.href)
         } else null
 
+        Log.d(TAG, "downloadCalendarEvents: calendar=${calendar.displayName} " +
+            "forceFullSync=$forceFullSync syncToken=${syncToken?.take(40) ?: "null"} " +
+            "url=$calendarUrl")
+
         val syncResult = if (syncToken != null) {
             // Incremental sync
             calDavService.syncEvents(calendarUrl, syncToken)
@@ -261,6 +265,10 @@ class ICloudSyncProvider(
 
         val response = syncResult.getOrThrow()
         downloaded = response.events.size
+        Log.d(TAG, "downloadCalendarEvents: got ${downloaded} events, syncToken=${response.syncToken?.take(40)}")
+
+        // Collect hrefs that need a follow-up multiget (returned without icalData)
+        val hrefsNeedingFetch = mutableListOf<String>()
 
         // Process each event
         for (resource in response.events) {
@@ -279,18 +287,30 @@ class ICloudSyncProvider(
                     val calDavEvents = eventMapper.parseICalendar(resource.icalData)
                     val calDavEvent = calDavEvents.firstOrNull() ?: continue
 
+                    Log.d(TAG, "downloadCalendarEvents: processing event uid=${calDavEvent.uid} " +
+                        "'${calDavEvent.summary}' date=${calDavEvent.dtStart.toLocalDate()} " +
+                        "isAllDay=${calDavEvent.isAllDay} lastModified=${calDavEvent.lastModified}")
+
                     val existingEvent = calendarDao.getEventByRemoteId(calDavEvent.uid)
 
                     if (existingEvent != null) {
                         // Update existing event (if remote is newer)
-                        if (eventMapper.isRemoteNewer(existingEvent, calDavEvent)) {
+                        val remoteNewer = eventMapper.isRemoteNewer(existingEvent, calDavEvent)
+                        Log.d(TAG, "downloadCalendarEvents: existing event found (id=${existingEvent.id}), " +
+                            "localDate=${existingEvent.startTime.toLocalDate()}, " +
+                            "localUpdatedAt=${existingEvent.updatedAt}, " +
+                            "remoteLastModified=${calDavEvent.lastModified ?: calDavEvent.dtStamp}, " +
+                            "isRemoteNewer=$remoteNewer")
+                        if (remoteNewer) {
                             val updatedEvent = eventMapper.mergeRemoteChanges(
                                 existingEvent, calDavEvent, resource.etag
                             )
                             calendarDao.updateEvent(updatedEvent)
+                            Log.d(TAG, "downloadCalendarEvents: merged → date=${updatedEvent.startTime.toLocalDate()}")
                             updated++
                         }
                     } else {
+                        Log.d(TAG, "downloadCalendarEvents: no local match for uid=${calDavEvent.uid}, inserting new")
                         // Insert new event
                         val newEvent = eventMapper.toLocalEvent(
                             calDavEvent = calDavEvent,
@@ -302,6 +322,11 @@ class ICloudSyncProvider(
                         calendarDao.insertEvent(newEvent)
                         inserted++
                     }
+                } else {
+                    // iCloud incremental sync sometimes returns events with status=200
+                    // but no icalData. Collect these for a follow-up multiget fetch.
+                    Log.d(TAG, "downloadCalendarEvents: resource ${resource.href} has no icalData (status=${resource.status}), will fetch via multiget")
+                    hrefsNeedingFetch.add(resource.href)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to process event ${resource.href}", e)
@@ -311,6 +336,57 @@ class ICloudSyncProvider(
                     message = "Failed to process event: ${e.message}",
                     type = SyncErrorType.PARSE_ERROR
                 ))
+            }
+        }
+
+        // Follow-up: fetch events that were returned without icalData via calendar-multiget
+        if (hrefsNeedingFetch.isNotEmpty()) {
+            Log.d(TAG, "downloadCalendarEvents: fetching ${hrefsNeedingFetch.size} events via calendar-multiget")
+            try {
+                val multigetResult = calDavService.getEventsByHref(calendarUrl, hrefsNeedingFetch)
+                if (multigetResult.isSuccess) {
+                    val fetchedResources = multigetResult.getOrThrow()
+                    Log.d(TAG, "downloadCalendarEvents: multiget returned ${fetchedResources.size} events")
+                    for (resource in fetchedResources) {
+                        try {
+                            val icalData = resource.icalData ?: continue
+                            val calDavEvents = eventMapper.parseICalendar(icalData)
+                            val calDavEvent = calDavEvents.firstOrNull() ?: continue
+
+                            Log.d(TAG, "downloadCalendarEvents: multiget event uid=${calDavEvent.uid} " +
+                                "'${calDavEvent.summary}' date=${calDavEvent.dtStart.toLocalDate()}")
+
+                            val existingEvent = calendarDao.getEventByRemoteId(calDavEvent.uid)
+                            if (existingEvent != null) {
+                                val remoteNewer = eventMapper.isRemoteNewer(existingEvent, calDavEvent)
+                                if (remoteNewer) {
+                                    val updatedEvent = eventMapper.mergeRemoteChanges(
+                                        existingEvent, calDavEvent, resource.etag
+                                    )
+                                    calendarDao.updateEvent(updatedEvent)
+                                    Log.d(TAG, "downloadCalendarEvents: multiget merged → date=${updatedEvent.startTime.toLocalDate()}")
+                                    updated++
+                                }
+                            } else {
+                                val newEvent = eventMapper.toLocalEvent(
+                                    calDavEvent = calDavEvent,
+                                    resourceHref = resource.href,
+                                    etag = resource.etag,
+                                    calendarId = calendar.href,
+                                    calendarName = calendar.displayName
+                                )
+                                calendarDao.insertEvent(newEvent)
+                                inserted++
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to process multiget event ${resource.href}", e)
+                        }
+                    }
+                } else {
+                    Log.e(TAG, "downloadCalendarEvents: multiget failed", multigetResult.exceptionOrNull())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "downloadCalendarEvents: multiget request failed", e)
             }
         }
 

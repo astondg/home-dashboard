@@ -25,6 +25,7 @@ import com.homedashboard.app.ui.theme.LocalIsEInk
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.util.Log
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -93,6 +94,7 @@ fun InlineDayWritingArea(
                     is RecognitionResult.Success -> {
                         recognizedText = result.bestMatch
                         parsedEvent = parser.parse(result.bestMatch, date)
+                        Log.d("InlineDayWritingArea", "Recognized '${result.bestMatch}' in cell date=$date → parsedEvent.date=${parsedEvent?.date}")
                         showConfirmation = true
                         onHandwritingUsed?.invoke()
                     }
@@ -231,6 +233,7 @@ fun InlineDayWritingArea(
                 var editIsAllDay by remember(event) { mutableStateOf(event.isAllDay) }
 
                 fun saveEvent() {
+                    Log.d("InlineDayWritingArea", "saveEvent: event.date=${event.date} title='${editTitle.trim()}'")
                     val edited = event.copy(
                         title = editTitle.trim(),
                         startTime = if (editIsAllDay) null else LocalTime.of(editHour, editMinute),
@@ -238,6 +241,7 @@ fun InlineDayWritingArea(
                         isAllDay = editIsAllDay,
                         location = editLocation.trim().ifBlank { null }
                     )
+                    Log.d("InlineDayWritingArea", "saveEvent: edited.date=${edited.date} (should match event.date)")
                     onEventCreated(edited)
                     clearAll()
                 }

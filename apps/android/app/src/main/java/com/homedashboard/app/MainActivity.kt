@@ -351,6 +351,7 @@ class MainActivity : ComponentActivity() {
                             recognizer = handwritingRecognizer,
                             parser = entityExtractionParser,
                             onInlineEventCreated = { parsedEvent ->
+                                android.util.Log.d("MainActivity", "onInlineEventCreated: date=${parsedEvent.date} title='${parsedEvent.title}'")
                                 viewModel.createEventFromParsedInput(
                                     title = parsedEvent.title,
                                     date = parsedEvent.date,
